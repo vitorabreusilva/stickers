@@ -31,7 +31,7 @@ export const PROVIDERS: Record<AiProvider, { name: string; keyUrl: string; keyHi
     name: 'QuiverAI',
     keyUrl: 'https://quiver.ai',
     keyHint: 'Your QuiverAI API key',
-    note: 'Sign in, then create a key under API keys. Arrow 2 is priced by how much drawing it produces.',
+    note: 'Sign in, then create a Production key under API keys (test keys only return a placeholder). Arrow 2 is priced by how much drawing it produces.',
   },
 }
 
@@ -349,7 +349,12 @@ async function drawWithFal(job: Job): Promise<Blob> {
  * QuiverAI's Arrow draws SVG from a description, with the sticker as a reference picture, so the
  * result is true vector line art. Returns the SVG, which is rendered at print size later.
  */
+const QUIVER_TEST_KEY =
+  'That’s a QuiverAI test key: it returns a placeholder instead of a drawing. Create a Production key in QuiverAI and paste it in AI settings.'
+
 async function drawWithQuiver(job: Job): Promise<Blob> {
+  // Test (sandbox) keys never reach a model; they answer with a fixed placeholder picture.
+  if (job.key.startsWith('sk_test_')) throw new AiError(QUIVER_TEST_KEY, 'key')
   const response = await post(
     'quiver',
     'https://api.quiver.ai/v1/svgs/generations',
@@ -372,6 +377,8 @@ async function drawWithQuiver(job: Job): Promise<Blob> {
     throw describeAiError('quiver', response.status, message)
   }
   const svg = body?.data?.[0]?.svg
+  if (response.headers.get('x-quiver-environment') === 'test' || svg?.includes('SANDBOX RESULT'))
+    throw new AiError(QUIVER_TEST_KEY, 'key')
   if (!svg || !svg.includes('<svg')) throw new AiError('QuiverAI sent back no drawing. Try again.')
   return new Blob([svg], { type: 'image/svg+xml' })
 }

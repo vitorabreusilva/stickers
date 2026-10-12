@@ -119,6 +119,25 @@ describe('requestAiLineArt', () => {
     expect(body.instructions).toContain('older children')
   })
 
+  it('explains QuiverAI test keys instead of drawing their placeholder', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const testKey = { ...settings, engine: 'quiver', keys: { ...settings.keys, quiver: 'sk_test_abc' } }
+    const err = await requestAiLineArt(new Blob(['x']), '1024x1024', 'medium', testKey).catch((e) => e)
+    expect(err.message).toContain('test key')
+    expect(err.kind).toBe('key')
+    expect(fetch).not.toHaveBeenCalled()
+
+    // Keys without the prefix are caught by the placeholder the sandbox sends back.
+    fetch.mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ svg: '<svg><text>SANDBOX RESULT</text></svg>' }] }), {
+        status: 200,
+        headers: { 'x-quiver-environment': 'test' },
+      }),
+    )
+    await expect(requestAiLineArt(new Blob(['x']), '1024x1024', 'medium', { ...settings, engine: 'quiver' })).rejects.toThrow('test key')
+  })
+
   it('uses a model name typed into the settings', async () => {
     const fetch = vi.fn().mockResolvedValue(ok({ candidates: [{ content: { parts: [{ inlineData: { data: btoa('x') } }] } }] }))
     vi.stubGlobal('fetch', fetch)
