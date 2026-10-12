@@ -37,4 +37,9 @@ clientsClaim()
 
 precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
-registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html')))
+// The API (including Google sign-in's redirect back to /api/auth/callback) must reach the server.
+registerRoute(
+  new NavigationRoute(createHandlerBoundToURL('index.html'), {
+    denylist: [new RegExp(`^${new URL('api/', self.registration.scope).pathname}`)],
+  }),
+)

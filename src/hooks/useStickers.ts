@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { deleteSticker, listStickers, saveSticker, updateSticker, type StickerRecord } from '../lib/db'
+import { collectionEvents, deleteSticker, listStickers, saveSticker, updateSticker, type StickerRecord } from '../lib/db'
 
 export interface Sticker extends StickerRecord {
   url: string
@@ -21,14 +21,30 @@ export function useStickers() {
 
   useEffect(() => {
     let cancelled = false
-    listStickers()
-      .then((records) => !cancelled && setStickers(records.map(withUrl)))
-      .catch((err) => {
-        console.error('Could not load stickers', err)
-        if (!cancelled) setStickers([])
-      })
+    const load = () =>
+      listStickers()
+        .then((records) => {
+          if (cancelled) return
+          // Let go of pictures for stickers deleted on another device.
+          const ids = new Set(records.map((r) => r.id))
+          urls.current.forEach((url, id) => {
+            if (!ids.has(id)) {
+              urls.current.delete(id)
+              setTimeout(() => URL.revokeObjectURL(url), 1000)
+            }
+          })
+          setStickers(records.map(withUrl))
+        })
+        .catch((err) => {
+          console.error('Could not load stickers', err)
+          if (!cancelled) setStickers((current) => current ?? [])
+        })
+    load()
+    // Synced in from another device.
+    collectionEvents.addEventListener('remote', load)
     return () => {
       cancelled = true
+      collectionEvents.removeEventListener('remote', load)
     }
   }, [withUrl])
 

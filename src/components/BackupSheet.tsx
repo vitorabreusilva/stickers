@@ -3,9 +3,16 @@ import { backupFilename, BackupError, createBackup, readBackup, type BackupConte
 import { storeBookTitle, storedBookTitle } from '../lib/book-title'
 import { readAll, restoreAll } from '../lib/db'
 import { canShareFile, downloadBlob, shareFile } from '../lib/device'
+import type { AccountState } from '../lib/account'
+import type { SyncStatus } from '../hooks/useAccount'
+import { AccountSection } from './AccountSection'
 import { CloseIcon, DownloadIcon, ShareIcon } from './icons'
 
 interface Props {
+  account: AccountState
+  sync: SyncStatus
+  onSyncNow: () => void
+  onSignOut: () => Promise<void>
   onClose: () => void
   toast: (message: string) => void
 }
@@ -18,8 +25,8 @@ function sizeLabel(bytes: number) {
   return bytes < 1e6 ? `${Math.max(1, Math.round(bytes / 1e3))} KB` : `${(bytes / 1e6).toFixed(1)} MB`
 }
 
-/** Saves the whole collection to one file, and brings one back. */
-export function BackupSheet({ onClose, toast }: Props) {
+/** Sign-in and sync, plus saving the whole collection to one file and bringing one back. */
+export function BackupSheet({ account, sync, onSyncNow, onSignOut, onClose, toast }: Props) {
   // The file is made as soon as the sheet opens, so Download and Share run straight from the tap;
   // Safari drops the share sheet if the tap is followed by a long await.
   const [prepared, setPrepared] = useState<Prepared | 'error' | null>(null)
@@ -82,10 +89,10 @@ export function BackupSheet({ onClose, toast }: Props) {
 
   return (
     <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sheet backup-sheet" role="dialog" aria-modal="true" aria-label="Backup">
+      <div className="sheet backup-sheet" role="dialog" aria-modal="true" aria-label="Sync and backup">
         <header className="sheet-header">
           <span className="icon-btn-spacer" />
-          <h2>Backup</h2>
+          <h2>{account.status === 'unavailable' ? 'Backup' : 'Sync and backup'}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <CloseIcon />
           </button>
@@ -113,6 +120,13 @@ export function BackupSheet({ onClose, toast }: Props) {
           </>
         ) : (
           <>
+            {account.status !== 'unavailable' && (
+              <>
+                <AccountSection account={account} sync={sync} onSyncNow={onSyncNow} onSignOut={onSignOut} toast={toast} />
+                <hr className="backup-divider" />
+                <h3 className="backup-heading">Backup file</h3>
+              </>
+            )}
             <p className="backup-text">
               Save your whole collection to one file: stickers, folder colours and the coloring book. Keep it somewhere
               safe, or open it on another device to bring everything across. AI keys aren&rsquo;t included.

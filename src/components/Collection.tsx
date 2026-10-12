@@ -5,7 +5,7 @@ import type { TopicGroup } from '../lib/topics'
 import type { Sticker } from '../hooks/useStickers'
 import { Folder } from './Folder'
 import { StickerGrid } from './StickerGrid'
-import { BackupIcon, BookIcon, PasteIcon, PlusIcon, StarMascot } from './icons'
+import { BackupIcon, BookIcon, CloudIcon, PasteIcon, PlusIcon, StarMascot } from './icons'
 
 interface Props {
   stickers: Sticker[] | null
@@ -24,6 +24,8 @@ interface Props {
   bookPages: number | null
   onOpenBook: () => void
   onOpenBackup: () => void
+  /** Signed in and syncing: the button shows a cloud instead of a box. */
+  synced: boolean
 }
 
 export function Collection({
@@ -40,6 +42,7 @@ export function Collection({
   bookPages,
   onOpenBook,
   onOpenBackup,
+  synced,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -85,8 +88,8 @@ export function Collection({
               {!!bookPages && <span className="book-btn-count">{bookPages}</span>}
             </button>
           )}
-          <button className="icon-btn backup-btn" onClick={onOpenBackup} aria-label="Backup">
-            <BackupIcon />
+          <button className="icon-btn backup-btn" onClick={onOpenBackup} aria-label="Sync and backup">
+            {synced ? <CloudIcon /> : <BackupIcon />}
           </button>
         </div>
       </header>

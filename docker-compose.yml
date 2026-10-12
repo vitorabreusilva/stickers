@@ -1,0 +1,19 @@
+# Local Postgres for development: docker compose up -d
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: stickers
+      POSTGRES_PASSWORD: stickers
+      POSTGRES_DB: stickers
+    ports:
+      - '5433:5432'
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U stickers']
+      interval: 2s
+      retries: 20
+
+volumes:
+  db:

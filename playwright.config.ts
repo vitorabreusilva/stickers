@@ -15,5 +15,7 @@ export default defineConfig({
     command: `npm run build && npm run preview -- --port ${port} --strictPort`,
     url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,
+    // The API runs inside the preview server (see vite.config.ts); e2e/sync.spec.ts signs in as this person.
+    env: { BETTER_AUTH_URL: `http://localhost:${port}`, ALLOWED_EMAILS: 'e2e@stickers.test' },
   },
 })

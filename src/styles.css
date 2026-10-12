@@ -1229,6 +1229,7 @@ button {
 
 .backup-sheet {
   gap: 12px;
+  overflow-y: auto;
 }
 
 .backup-text {
@@ -1263,6 +1264,67 @@ button {
 
 .backup-restore {
   align-self: center;
+}
+
+.backup-heading {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.account {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.google-btn {
+  align-self: stretch;
+}
+
+.account-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--violet);
+  color: #fff;
+  font-weight: 800;
+  object-fit: cover;
+}
+
+.account-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.account-name strong,
+.account-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-name span {
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.account-status {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 700;
 }
 
 /* Coloring book */
