@@ -5,7 +5,7 @@ import type { TopicGroup } from '../lib/topics'
 import type { Sticker } from '../hooks/useStickers'
 import { Folder } from './Folder'
 import { StickerGrid } from './StickerGrid'
-import { BackupIcon, BookIcon, CloudIcon, PasteIcon, PlusIcon, StarMascot } from './icons'
+import { BookIcon, CloseIcon, GoogleIcon, PasteIcon, PlusIcon, SettingsIcon, StarMascot } from './icons'
 
 interface Props {
   stickers: Sticker[] | null
@@ -24,9 +24,11 @@ interface Props {
   bookPages: number | null
   onOpenBook: () => void
   onOpenBackup: () => void
-  /** Signed in and syncing: the button shows a cloud instead of a box. */
-  synced: boolean
+  /** Set while signed out, to offer signing in right on the home screen. */
+  onSignIn?: () => void
 }
+
+const SIGN_IN_DISMISSED = 'stickers.signInDismissed'
 
 export function Collection({
   stickers,
@@ -42,10 +44,26 @@ export function Collection({
   bookPages,
   onOpenBook,
   onOpenBackup,
-  synced,
+  onSignIn,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
+  // "Not now" on the sign-in banner sticks; signing in is still in Settings.
+  const [signInDismissed, setSignInDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(SIGN_IN_DISMISSED) === '1'
+    } catch {
+      return false
+    }
+  })
+  const dismissSignIn = () => {
+    setSignInDismissed(true)
+    try {
+      localStorage.setItem(SIGN_IN_DISMISSED, '1')
+    } catch {
+      // It just comes back next time.
+    }
+  }
 
   const count = stickers?.length ?? 0
   // A single group needs no folders; the stickers go straight on the page.
@@ -88,11 +106,23 @@ export function Collection({
               {!!bookPages && <span className="book-btn-count">{bookPages}</span>}
             </button>
           )}
-          <button className="icon-btn backup-btn" onClick={onOpenBackup} aria-label="Sync and backup">
-            {synced ? <CloudIcon /> : <BackupIcon />}
+          <button className="icon-btn backup-btn" onClick={onOpenBackup} aria-label="Settings">
+            <SettingsIcon />
           </button>
         </div>
       </header>
+
+      {onSignIn && !signInDismissed && (
+        <section className="sign-in-banner" aria-label="Sign in">
+          <p>Sign in to sync your stickers across your devices.</p>
+          <button className="btn btn-secondary sign-in-btn" onClick={onSignIn}>
+            <GoogleIcon /> Sign in with Google
+          </button>
+          <button className="icon-btn sign-in-dismiss" onClick={dismissSignIn} aria-label="Not now">
+            <CloseIcon />
+          </button>
+        </section>
+      )}
 
       {stickers && count === 0 && (
         <section className="empty">

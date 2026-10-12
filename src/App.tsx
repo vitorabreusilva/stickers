@@ -9,7 +9,7 @@ import { StickerDetail } from './components/StickerDetail'
 import { StickerPreview } from './components/StickerPreview'
 import { cutoutPreferred, preloadCutout } from './lib/cutout'
 import { newId, requestPersistentStorage } from './lib/db'
-import { SIGN_IN_ERROR_PARAM } from './lib/account'
+import { signIn, SIGN_IN_ERROR_PARAM } from './lib/account'
 import { canReadClipboard, firstImageFile, readClipboardImage, takeSharedImage } from './lib/device'
 import { folderColor, folderLabel, type FolderKey } from './lib/folders'
 import type { Point } from './lib/geometry'
@@ -90,7 +90,8 @@ export function App() {
     url.searchParams.delete(SIGN_IN_ERROR_PARAM)
     history.replaceState(history.state, '', url)
     setBackupOpen(true)
-  }, [])
+    showToast("Couldn't sign in with that Google account. Is it on the invite list?")
+  }, [showToast])
 
   // Images shared to the installed app from the Android share sheet.
   useEffect(() => {
@@ -139,7 +140,11 @@ export function App() {
         bookPages={book.pages?.length ?? null}
         onOpenBook={() => push({ kind: 'book' })}
         onOpenBackup={() => setBackupOpen(true)}
-        synced={account.status === 'signed-in'}
+        onSignIn={
+          account.status === 'signed-out'
+            ? () => signIn().catch(() => showToast("Couldn't reach Google. Check your connection."))
+            : undefined
+        }
       />
 
       {stack.map((screen, i) => {
