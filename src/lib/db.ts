@@ -136,6 +136,27 @@ export async function reorderBook(ids: string[]): Promise<void> {
   await tx.done
 }
 
+/** Everything in the database, for backups. */
+export async function readAll() {
+  const database = await db()
+  const [stickers, folders, book] = await Promise.all([listStickers(), database.getAll('folders'), listBookPages()])
+  return { stickers, folders, book }
+}
+
+/**
+ * Adds restored records to the collection in one go. Records with the same id are replaced, and
+ * anything not in the backup is left alone, so restoring twice or onto a used phone is safe.
+ */
+export async function restoreAll(data: { stickers: StickerRecord[]; folders: FolderRecord[]; book: BookPageRecord[] }) {
+  const tx = (await db()).transaction(['stickers', 'folders', 'book'], 'readwrite')
+  await Promise.all([
+    ...data.stickers.map((r) => tx.objectStore('stickers').put(r)),
+    ...data.folders.map((r) => tx.objectStore('folders').put(r)),
+    ...data.book.map((r) => tx.objectStore('book').put(r)),
+  ])
+  await tx.done
+}
+
 export function newId(): string {
   // randomUUID only exists in secure contexts; plain-http LAN testing still needs ids.
   return crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`

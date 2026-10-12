@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { BackupSheet } from './components/BackupSheet'
 import { BookView } from './components/BookView'
 import { Collection } from './components/Collection'
 import { ColoringStudio } from './components/ColoringStudio'
@@ -42,6 +43,7 @@ export function App() {
   const [toast, showToast] = useToast()
   const [freshId, setFreshId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [backupOpen, setBackupOpen] = useState(false)
 
   const openImage = useCallback(
     async (blob: Blob) => {
@@ -124,6 +126,7 @@ export function App() {
         onOpenFolder={(key) => push({ kind: 'folder', key })}
         bookPages={book.pages?.length ?? null}
         onOpenBook={() => push({ kind: 'book' })}
+        onOpenBackup={() => setBackupOpen(true)}
       />
 
       {stack.map((screen, i) => {
@@ -207,6 +210,7 @@ export function App() {
         }
       })}
 
+      {backupOpen && <BackupSheet onClose={() => setBackupOpen(false)} toast={showToast} />}
       {busy && <div className="busy" aria-label="Opening picture"><div className="spinner" /></div>}
       {toast && (
         <div className="toast" role="status">
