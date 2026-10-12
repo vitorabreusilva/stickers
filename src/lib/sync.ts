@@ -33,11 +33,11 @@ import type { TopicId } from './topics'
 const PUSH_BATCH = 50
 /**
  * Raised whenever the server starts sending something earlier versions of the app didn't keep (2:
- * coloring books, and which book each page is in). An installed app opens on its cached version
+ * coloring books, and which book each page is in; 3: pages with their colour guide hidden). An installed app opens on its cached version
  * after an update and syncs once before the new one takes over, so that old version can move the
  * cursor past records it threw away. A new version pulls everything again to pick those up.
  */
-const PULL_VERSION = 2
+const PULL_VERSION = 3
 const DOWNLOADS_AT_ONCE = 4
 
 /** The server said we're not signed in (any more). */
