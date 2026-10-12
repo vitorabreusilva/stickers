@@ -3,6 +3,7 @@
 import type { CutoutReply, CutoutRequest, WorkerMask } from './cutout-protocol'
 import { boundingBox, intersectRect, polygonCentroid, type Point, type Rect } from './geometry'
 import { createCanvas, type LoadedImage } from './image'
+import { backdropCut, type Selection } from './sticker'
 
 export interface SubjectMask extends WorkerMask {
   /** The part of the picture, in image pixels, that the mask covers. */
@@ -131,11 +132,12 @@ export async function findSubject(
 }
 
 export interface CutoutJob {
-  promise: Promise<SubjectMask | null>
+  /** How the subject was found, or null if there's no clear subject. */
+  promise: Promise<Selection | null>
   /** Latest progress, for screens that start watching mid-way. */
   status: CutoutStatus
   /** Set once the job has finished successfully. */
-  result?: { mask: SubjectMask | null }
+  result?: { selection: Selection | null }
   subscribe: (listener: (status: CutoutStatus) => void) => () => void
 }
 
@@ -148,19 +150,27 @@ export function cutoutFor(image: LoadedImage, loop: Point[]): CutoutJob {
   if (existing) return existing
 
   const listeners = new Set<(status: CutoutStatus) => void>()
+  const onStatus = (status: CutoutStatus) => {
+    job.status = status
+    listeners.forEach((listener) => listener(status))
+  }
   const job: CutoutJob = {
     status: { stage: 'cutting' },
-    promise: findSubject(image, loop, (status) => {
-      job.status = status
-      listeners.forEach((listener) => listener(status))
-    }),
+    promise: (async (): Promise<Selection | null> => {
+      // Let the "cutting" state paint first; the plain-backdrop cut is quick but synchronous.
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      const cut = backdropCut(image, loop)
+      if (cut) return { kind: 'backdrop', cut }
+      const mask = await findSubject(image, loop, onStatus)
+      return mask && { kind: 'mask', mask }
+    })(),
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
   }
   job.promise.then(
-    (mask) => (job.result = { mask }),
+    (selection) => (job.result = { selection }),
     () => cutoutJobs.delete(loop),
   )
   cutoutJobs.set(loop, job)

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { cutoutFor, cutoutPreferred, setCutoutPreferred, type CutoutStatus, type SubjectMask } from '../lib/cutout'
+import { cutoutFor, cutoutPreferred, setCutoutPreferred, type CutoutStatus } from '../lib/cutout'
 import type { Point } from '../lib/geometry'
 import type { LoadedImage } from '../lib/image'
-import { createSticker, OUTLINE_SIZES, type OutlineSize, type StickerImage } from '../lib/sticker'
+import { createSticker, OUTLINE_SIZES, type OutlineSize, type Selection, type StickerImage } from '../lib/sticker'
 import { BackIcon, SparkleIcon } from './icons'
 
 interface Props {
@@ -15,7 +15,7 @@ interface Props {
 type Cutout =
   | { kind: 'off' }
   | { kind: 'working'; status: CutoutStatus }
-  | { kind: 'done'; mask: SubjectMask }
+  | { kind: 'done'; selection: Selection }
   | { kind: 'failed'; message: string }
 
 const OUTLINE_KEY = 'stickers.outline'
@@ -48,20 +48,20 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
     }
     let cancelled = false
     const job = cutoutFor(image, loop)
-    const finish = (mask: SubjectMask | null) =>
+    const finish = (selection: Selection | null) =>
       setCutout(
-        mask
-          ? { kind: 'done', mask }
+        selection
+          ? { kind: 'done', selection }
           : { kind: 'failed', message: "Couldn't spot a clear subject, so here's your loop as drawn." },
       )
     if (job.result) {
-      finish(job.result.mask)
+      finish(job.result.selection)
       return
     }
     setCutout({ kind: 'working', status: job.status })
     const unsubscribe = job.subscribe((status) => setCutout({ kind: 'working', status }))
     job.promise
-      .then((mask) => !cancelled && finish(mask))
+      .then((selection) => !cancelled && finish(selection))
       .catch((err) => {
         console.error('Background removal failed', err)
         if (cancelled) return
@@ -86,7 +86,7 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
     let cancelled = false
     let url: string | undefined
     setError(null)
-    createSticker(image, loop, outline, cutout.kind === 'done' ? cutout.mask : undefined)
+    createSticker(image, loop, outline, cutout.kind === 'done' ? cutout.selection : undefined)
       .then((result) => {
         if (cancelled) return
         url = URL.createObjectURL(result.blob)

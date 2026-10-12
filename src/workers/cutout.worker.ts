@@ -87,16 +87,49 @@ function runStroke(task: InteractiveSegmenter, brushMode: BrushMode, point: { x:
   }
 }
 
+// A loop result with less of itself inside the loop than this probably grabbed something bigger
+// behind the subject (the burger under a character, the person holding a pet).
+const MIN_INSIDE = 0.95
+
+/** The user's loop rasterised at mask resolution. */
+function loopRaster(points: { x: number; y: number }[], width: number, height: number): Uint8Array {
+  const canvas = new OffscreenCanvas(width, height)
+  const ctx = canvas.getContext('2d')!
+  ctx.beginPath()
+  points.forEach((p, i) => (i ? ctx.lineTo(p.x * width, p.y * height) : ctx.moveTo(p.x * width, p.y * height)))
+  ctx.closePath()
+  ctx.fill()
+  const data = ctx.getImageData(0, 0, width, height).data
+  return Uint8Array.from({ length: width * height }, (_, i) => (data[i * 4 + 3] >= 128 ? 1 : 0))
+}
+
+/** Share of a mask's subject that lies inside the loop. */
+function insideShare(mask: { alpha: Float32Array }, loop: Uint8Array) {
+  let all = 0
+  let inside = 0
+  for (let i = 0; i < loop.length; i++) {
+    if (mask.alpha[i] < 0.5) continue
+    all++
+    inside += loop[i]
+  }
+  return all ? inside / all : 0
+}
+
 /** Null if the model came back empty, which on a working engine never happens for a loop. */
 function cut(task: InteractiveSegmenter, request: Extract<CutoutRequest, { type: 'segment' }>) {
   task.setImage(request.image)
   const lasso = runStroke(task, LASSO, request.points)
   if (!lasso) return null
-  if (lasso.coverage < MAX_COVERAGE) return { mask: lasso }
-  // A loose loop on a plain background selects the background, which spans the whole picture.
-  // Ask for the thing in the middle of the loop instead.
+  const usable = (m: typeof lasso | null) => !!m && m.coverage < MAX_COVERAGE
+  const loop = loopRaster(request.points, lasso.width, lasso.height)
+  const lassoInside = usable(lasso) ? insideShare(lasso, loop) : 0
+  if (lassoInside >= MIN_INSIDE) return { mask: lasso }
+  // The loop result spilled outside the loop (or took the whole background): ask for the thing in
+  // the middle of the loop instead, and keep whichever fits the loop better.
   const point = runStroke(task, POSITIVE, [request.center])
-  return { mask: point && point.coverage < MAX_COVERAGE ? point : null }
+  const pointInside = usable(point) ? insideShare(point!, loop) : 0
+  if (pointInside > lassoInside) return { mask: point }
+  return { mask: usable(lasso) ? lasso : null }
 }
 
 self.onmessage = async ({ data: request }: MessageEvent<CutoutRequest>) => {

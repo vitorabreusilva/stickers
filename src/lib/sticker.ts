@@ -2,6 +2,7 @@ import type { SubjectMask } from './cutout'
 import { boundingBox, intersectRect, type Point, type Rect } from './geometry'
 import { canvasToBlob, createCanvas, type LoadedImage } from './image'
 import { addOutline, opaqueBounds } from './outline'
+import { matteOnBackdrop } from './backdrop'
 import { keepMainBlobs } from './mask'
 import { colorMatte, decontaminate, flatBackdrop, keyOutBackdrop } from './refine'
 
@@ -54,10 +55,12 @@ const smoothstep = (lo: number, hi: number, v: number) => {
   return t * t * (3 - 2 * t)
 }
 
-interface Cut {
+export interface Cut {
   pixels: Uint8ClampedArray<ArrayBuffer>
   width: number
   height: number
+  /** The part of the picture the cut-out covers, in image pixels. */
+  crop: Rect
 }
 
 // The cut-out doesn't depend on the border, so switching borders reuses it.
@@ -67,7 +70,7 @@ const cuts = new WeakMap<object, Cut>()
  * The cut-out without a border, at sticker resolution. With a `subject` mask it's the subject alone,
  * with its edges snapped to the picture; otherwise it's everything inside `loop` (in image pixels).
  */
-function cutOut(image: LoadedImage, loop: Point[], subject?: SubjectMask): Cut {
+export function cutOut(image: LoadedImage, loop: Point[], subject?: SubjectMask): Cut {
   const key = subject ?? loop
   const cached = cuts.get(key)
   if (cached) return cached
@@ -122,22 +125,82 @@ function cutOut(image: LoadedImage, loop: Point[], subject?: SubjectMask): Cut {
     decontaminate(data, width, height)
   }
 
-  const cut = { pixels: data, width, height }
+  const cut = { pixels: data, width, height, crop }
   cuts.set(key, cut)
   return cut
 }
 
+// Room around the loop for sampling the backdrop.
+const BACKDROP_MARGIN = 0.08
+const backdropCuts = new WeakMap<Point[], Cut | null>()
+
 /**
- * Cuts a sticker out of the image and gives it a white die-cut border. With a `subject` mask the
+ * The subject inside `loop` cut out exactly, if the picture has a plain backdrop around it (clip
+ * art on a white page, a product on a studio wall). Null otherwise. Takes well under a second.
+ */
+export function backdropCut(image: LoadedImage, loop: Point[]): Cut | null {
+  const cached = backdropCuts.get(loop)
+  if (cached !== undefined) return cached
+
+  const box = boundingBox(loop)
+  const crop = intersectRect(
+    {
+      x: box.x - box.width * BACKDROP_MARGIN,
+      y: box.y - box.height * BACKDROP_MARGIN,
+      width: box.width * (1 + 2 * BACKDROP_MARGIN),
+      height: box.height * (1 + 2 * BACKDROP_MARGIN),
+    },
+    { x: 0, y: 0, width: image.width, height: image.height },
+  )
+  let cut: Cut | null = null
+  if (crop.width >= 8 && crop.height >= 8) {
+    const longest = Math.max(crop.width, crop.height)
+    const scale = Math.min(MAX_SIZE / longest, Math.max(1, MIN_SIZE / longest))
+    const width = Math.max(1, Math.round(crop.width * scale))
+    const height = Math.max(1, Math.round(crop.height * scale))
+    const canvas = createCanvas(width, height)
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    if (!ctx) throw new Error('Canvas is not available')
+    ctx.imageSmoothingQuality = 'high'
+    ctx.scale(scale, scale)
+    ctx.translate(-crop.x, -crop.y)
+    ctx.drawImage(image.source, 0, 0, image.width, image.height)
+    const { data } = ctx.getImageData(0, 0, width, height)
+
+    // The loop, rasterised at the same scale.
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, width, height)
+    ctx.scale(scale, scale)
+    ctx.translate(-crop.x, -crop.y)
+    ctx.beginPath()
+    traceLoop(ctx, loop)
+    ctx.fillStyle = '#000'
+    ctx.fill('evenodd')
+    const loopPixels = ctx.getImageData(0, 0, width, height).data
+    const inside = new Uint8Array(width * height)
+    for (let i = 0; i < inside.length; i++) inside[i] = loopPixels[i * 4 + 3] >= 128 ? 1 : 0
+
+    const matte = matteOnBackdrop(data, width, height, inside)
+    if (matte) cut = { pixels: matte.rgba, width, height, crop }
+  }
+  backdropCuts.set(loop, cut)
+  return cut
+}
+
+/** How the subject was found: exactly on a plain backdrop, or by the segmentation model. */
+export type Selection = { kind: 'backdrop'; cut: Cut } | { kind: 'mask'; mask: SubjectMask }
+
+/**
+ * Cuts a sticker out of the image and gives it a white die-cut border. With a `selection` the
  * sticker is the subject alone; otherwise it's everything inside `loop` (in image pixels).
  */
 export async function createSticker(
   image: LoadedImage,
   loop: Point[],
   outline: OutlineSize,
-  subject?: SubjectMask,
+  selection?: Selection,
 ): Promise<StickerImage> {
-  const cut = cutOut(image, loop, subject)
+  const cut = selection?.kind === 'backdrop' ? selection.cut : cutOut(image, loop, selection?.mask)
   const radius =
     outline === 'none' ? 0 : Math.max(3, Math.round(Math.max(cut.width, cut.height) * OUTLINE_RATIO[outline]))
   const pad = radius + 2

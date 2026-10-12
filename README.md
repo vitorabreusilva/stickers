@@ -52,6 +52,7 @@ The app will be at `https://<user>.github.io/<repo>/`. The workflow reads the ba
 | Background removal: model loading, caching, inference | `src/workers/cutout.worker.ts`, `src/lib/cutout.ts` |
 | Mask cleanup (stray specks, crisp edges) | `src/lib/mask.ts` |
 | Edge refinement: colour matte, backdrop keying, decontamination | `src/lib/refine.ts` |
+| Plain-backdrop matting (exact cut-outs on flat backgrounds) | `src/lib/backdrop.ts` |
 | Cut-out and export | `src/lib/sticker.ts` |
 | Border: distance transform, gap filling, compositing | `src/lib/outline.ts` |
 | Topic analysis: classifier, embedder, face detector | `src/workers/analysis.worker.ts`, `src/lib/analysis.ts` |
@@ -62,7 +63,9 @@ The app will be at `https://<user>.github.io/<repo>/`. The workflow reads the ba
 
 **Background removal** uses Google's [MediaPipe Interactive Segmenter](https://ai.google.dev/edge/mediapipe/solutions/vision/interactive_segmenter) v2 ("Magic Touch"), which accepts a lasso stroke as the prompt. It runs in a Web Worker so the UI stays responsive. It uses the GPU when there's a real one, and falls back to the CPU (WebAssembly) otherwise.
 
-The worker gets the part of the picture around the loop plus some margin, so subjects that stick out of a quick loop still come out whole. If the model returns nearly the entire area, which happens with loose loops on plain backgrounds, it asks again with a point at the loop's center. The mask is then cleaned up by dropping specks and faint haze.
+**Plain backdrops** (clip art, stickers on white or flat colour) skip the model entirely. A smooth backdrop is fitted to the pixels outside the loop, backdrop-coloured pixels reachable from outside are cut away, and enclosed coloured gaps become holes while white areas inside the outline (eyes, gloves) are kept. Edge pixels are un-blended against the backdrop, so thin lines and handles stay intact without halos.
+
+On busy pictures the worker gets the part of the picture around the loop plus some margin, so subjects that stick out of a quick loop still come out whole. If the model's lasso answer spills well outside the loop (it often grabs a bigger object behind the subject), it also asks with a point at the loop's center and keeps whichever result fits the loop better. The mask is then cleaned up by dropping specks and faint haze.
 
 On first use the model and runtime (about 44 MB, or roughly 35 MB over the wire) download with a progress bar and are stored in Cache Storage. The app starts this download as soon as you open a picture, so it's usually done by the time you finish drawing. Check the model's card for license terms before using it commercially.
 
