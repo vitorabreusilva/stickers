@@ -1451,6 +1451,71 @@ button {
   align-self: center;
 }
 
+.ai-engines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-engine {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  text-align: left;
+}
+
+.ai-engine.active {
+  box-shadow: inset 0 0 0 2.5px var(--violet);
+}
+
+.ai-engine-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.ai-engine-ready {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--violet) 14%, transparent);
+  color: var(--violet);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ai-engine-blurb {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai-engine-price {
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.ai-advanced {
+  align-self: flex-start;
+  min-height: 36px;
+  padding: 6px 4px;
+  font-size: 13px;
+}
+
+.paper-alternatives {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
 .paper-size {
   margin: 10px 0 14px;
   color: var(--ink-soft);

@@ -1,6 +1,6 @@
 // Draws coloring pages and the book cover at print resolution, and exports them as PDF or prints them.
 
-import { aiSize, requestAiLineArt, type AiSettings } from './ai-coloring'
+import { aiSize, engineById, requestAiLineArt, type AiEngine, type AiSettings } from './ai-coloring'
 import { ART_BOX, collageLayout, DPI, FOOTER_BOX, fitBox, mmToPx, PAGE_MM, PAGE_PX } from './book-layout'
 import { LINE_WIDTHS_MM, type ColoringDetail } from './coloring'
 import type { ColoringReply, ColoringRequest } from './coloring-protocol'
@@ -85,7 +85,7 @@ async function runWorker(request: ColoringRequest): Promise<HTMLCanvasElement> {
 }
 
 /**
- * Line art for a sticker drawn by OpenAI's image model, tidied and sized to fill the drawing area
+ * Line art for a sticker drawn by an AI image model, tidied and sized to fill the drawing area
  * of an A5 page. The sticker is sent on white, shaped like the picture that comes back.
  */
 export async function drawAiColoringArt(
@@ -93,6 +93,7 @@ export async function drawAiColoringArt(
   detail: ColoringDetail,
   settings: AiSettings,
   signal?: AbortSignal,
+  engine: AiEngine = engineById(settings.engine),
 ): Promise<HTMLCanvasElement> {
   const bitmap = await createImageBitmap(sticker)
   const size = aiSize(bitmap.width / bitmap.height)
@@ -105,12 +106,9 @@ export async function drawAiColoringArt(
   ictx.drawImage(bitmap, spot.x, spot.y, spot.width, spot.height)
   bitmap.close()
 
-  const drawn = await requestAiLineArt(await canvasToBlob(input), size, detail, settings, signal)
-  const result = await createImageBitmap(drawn)
-  const canvas = createCanvas(result.width, result.height)
+  const drawn = await requestAiLineArt(await canvasToBlob(input), size, detail, settings, signal, engine)
+  const canvas = drawn.type === 'image/svg+xml' ? await rasterizeSvg(drawn, ART_BOX.width, ART_BOX.height) : await toCanvas(drawn)
   const cctx = context(canvas)
-  cctx.drawImage(result, 0, 0)
-  result.close()
   return runWorker({
     id: nextId++,
     type: 'clean',
@@ -118,6 +116,45 @@ export async function drawAiColoringArt(
     width: ART_BOX.width,
     height: ART_BOX.height,
   })
+}
+
+async function toCanvas(image: Blob): Promise<HTMLCanvasElement> {
+  const bitmap = await createImageBitmap(image)
+  const canvas = createCanvas(bitmap.width, bitmap.height)
+  context(canvas).drawImage(bitmap, 0, 0)
+  bitmap.close()
+  return canvas
+}
+
+/** Draws an SVG on white at the largest size that fits `width` × `height`, so lines stay crisp. */
+async function rasterizeSvg(svg: Blob, width: number, height: number): Promise<HTMLCanvasElement> {
+  const doc = new DOMParser().parseFromString(await svg.text(), 'image/svg+xml')
+  const root = doc.documentElement
+  if (root.nodeName !== 'svg') throw new Error('The vector drawing could not be read')
+  const box = (root.getAttribute('viewBox') ?? '').trim().split(/[\s,]+/).map(Number)
+  const ownWidth = box.length === 4 && box[2] > 0 ? box[2] : parseFloat(root.getAttribute('width') ?? '') || 1024
+  const ownHeight = box.length === 4 && box[3] > 0 ? box[3] : parseFloat(root.getAttribute('height') ?? '') || 1024
+  if (!root.getAttribute('viewBox')) root.setAttribute('viewBox', `0 0 ${ownWidth} ${ownHeight}`)
+  const scale = Math.min(width / ownWidth, height / ownHeight)
+  const outWidth = Math.max(1, Math.round(ownWidth * scale))
+  const outHeight = Math.max(1, Math.round(ownHeight * scale))
+  root.setAttribute('width', String(outWidth))
+  root.setAttribute('height', String(outHeight))
+
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(doc)], { type: 'image/svg+xml' }))
+  try {
+    const img = new Image()
+    img.src = url
+    await img.decode()
+    const canvas = createCanvas(outWidth, outHeight)
+    const ctx = context(canvas)
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, outWidth, outHeight)
+    ctx.drawImage(img, 0, 0, outWidth, outHeight)
+    return canvas
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 /**

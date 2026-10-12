@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { loadAiSettings, priceLabel, type AiSettings } from '../lib/ai-coloring'
+import { AI_ENGINES, AiError, engineById, hasKey, loadAiSettings, priceLabel, PROVIDERS, saveAiSettings, type AiErrorKind, type AiSettings } from '../lib/ai-coloring'
 import { composePage, drawAiColoringArt, drawColoringArt, pagesToPdf, printPages } from '../lib/book-render'
 import { COLORING_DETAILS, type ColoringDetail } from '../lib/coloring'
 import { newId, type BookPageRecord } from '../lib/db'
@@ -53,19 +53,21 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
   const [page, setPage] = useState<{ blob: Blob; url: string; key: string } | null>(null)
   const [working, setWorking] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [aiError, setAiError] = useState<string | null>(null)
+  const [aiError, setAiError] = useState<{ message: string; kind: AiErrorKind } | null>(null)
   const [added, setAdded] = useState<Set<string>>(() => new Set())
   const [busy, setBusy] = useState<'pdf' | 'add' | null>(null)
   // Line art per detail level, so flipping back and forth doesn't redraw it. AI drawings cost
   // money, so they're only made when asked for, and kept.
   const arts = useRef(new Map<ColoringDetail, Promise<HTMLCanvasElement>>())
-  const aiArts = useRef(new Map<ColoringDetail, Promise<HTMLCanvasElement>>())
+  const aiArts = useRef(new Map<string, Promise<HTMLCanvasElement>>())
   const aiAbort = useRef<AbortController | null>(null)
   const [aiVersion, setAiVersion] = useState(0)
   const [aiDrawing, setAiDrawing] = useState(false)
 
   // AI mode before the AI has drawn this detail level: show the free drawing as a preview.
-  const aiArt = engine === 'ai' ? aiArts.current.get(detail) : undefined
+  const aiEngine = engineById(ai.engine)
+  const aiReady = hasKey(ai, aiEngine)
+  const aiArt = engine === 'ai' ? aiArts.current.get(`${aiEngine.id}:${detail}`) : undefined
   const awaitingAi = engine === 'ai' && !aiArt
   const key = `${aiArt ? 'ai' : 'free'}:${detail}:${guide}`
 
@@ -103,26 +105,37 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
 
   useEffect(() => () => aiAbort.current?.abort(), [])
 
-  const drawWithAi = () => {
-    if (!ai.key) {
+  /** Draws with the chosen model, or switches to `other` first (after a refusal). */
+  const drawWithAi = (other?: string) => {
+    let settings = ai
+    if (other && other !== ai.engine) {
+      settings = { ...ai, engine: other }
+      saveAiSettings(settings)
+      setAi(settings)
+    }
+    const drawer = engineById(settings.engine)
+    if (!hasKey(settings, drawer)) {
       setSettingsOpen(true)
       return
     }
     aiAbort.current?.abort()
     const controller = new AbortController()
     aiAbort.current = controller
-    const forDetail = detail
-    const art = drawAiColoringArt(sticker.blob, forDetail, ai, controller.signal)
-    aiArts.current.set(forDetail, art)
+    const slot = `${drawer.id}:${detail}`
+    const art = drawAiColoringArt(sticker.blob, detail, settings, controller.signal, drawer)
+    aiArts.current.set(slot, art)
     setAiError(null)
     setAiDrawing(true)
     setAiVersion((v) => v + 1)
     art
       .catch((err: Error) => {
-        aiArts.current.delete(forDetail)
+        aiArts.current.delete(slot)
         if (controller.signal.aborted) return
         console.error('AI drawing failed', err)
-        setAiError(err.message || 'The AI drawing failed. Try again.')
+        setAiError({
+          message: err.message || 'The AI drawing failed. Try again.',
+          kind: err instanceof AiError ? err.kind : 'other',
+        })
       })
       .finally(() => {
         if (aiAbort.current !== controller) return
@@ -134,7 +147,7 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
   const cancelAi = () => {
     aiAbort.current?.abort()
     aiAbort.current = null
-    aiArts.current.delete(detail)
+    aiArts.current.delete(`${aiEngine.id}:${detail}`)
     setAiDrawing(false)
     setAiVersion((v) => v + 1)
   }
@@ -158,6 +171,8 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
 
   const ready = page && page.key === key && !working && !awaitingAi && !aiDrawing
   const price = priceLabel(ai)
+  // Other models ready to go, cheapest first, for when the chosen one refuses.
+  const alternatives = AI_ENGINES.filter((e) => e.id !== aiEngine.id && hasKey(ai, e)).slice(0, 2)
   const isAdded = added.has(key)
 
   const savePdf = async () => {
@@ -232,7 +247,7 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
                   <SparkleIcon />
                 </div>
                 <p>
-                  Drawing with AI…
+                  Drawing with {aiEngine.name}…
                   <small>Usually 20–60 seconds</small>
                 </p>
                 <button className="btn btn-secondary paper-status-btn" onClick={cancelAi}>
@@ -241,15 +256,29 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
               </div>
             ) : awaitingAi ? (
               <div className="paper-status">
-                {aiError && <p className="paper-error" role="alert">{aiError}</p>}
-                <button className="btn btn-primary paper-status-btn" onClick={drawWithAi}>
-                  <SparkleIcon /> {ai.key ? (aiError ? 'Try again' : 'Draw with AI') : 'Set up AI drawing'}
-                </button>
+                {aiError && <p className="paper-error" role="alert">{aiError.message}</p>}
+                {aiError?.kind === 'refused' ? (
+                  // Models refuse different things, so offer the others straight away.
+                  <div className="paper-alternatives">
+                    {alternatives.map((e) => (
+                      <button key={e.id} className="btn btn-primary paper-status-btn" onClick={() => drawWithAi(e.id)}>
+                        <SparkleIcon /> Try {e.name}
+                      </button>
+                    ))}
+                    <button className="btn btn-secondary paper-status-btn" onClick={() => setSettingsOpen(true)}>
+                      {alternatives.length ? 'More models' : 'Set up another model'}
+                    </button>
+                  </div>
+                ) : (
+                  <button className="btn btn-primary paper-status-btn" onClick={() => drawWithAi()}>
+                    <SparkleIcon /> {aiReady ? (aiError ? 'Try again' : 'Draw with AI') : 'Set up AI drawing'}
+                  </button>
+                )}
                 <p>
                   <small>
-                    {ai.key
-                      ? `Professional line art by OpenAI${price ? `, ${price} a page` : ''}`
-                      : 'Uses your own OpenAI API key'}
+                    {aiReady
+                      ? `${aiEngine.name} by ${PROVIDERS[aiEngine.provider].name}${price ? `, ${price} a page` : ''}`
+                      : `Uses your own ${PROVIDERS[aiEngine.provider].name} API key`}
                   </small>
                 </p>
               </div>
@@ -293,7 +322,7 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
               </button>
             )}
             {engine === 'ai' && aiArt && !aiDrawing && (
-              <button className="btn btn-ghost engine-settings" onClick={drawWithAi}>
+              <button className="btn btn-ghost engine-settings" onClick={() => drawWithAi()}>
                 Redraw
               </button>
             )}
@@ -343,6 +372,7 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
           settings={ai}
           onSave={(next) => {
             setAi(next)
+            setAiError(null)
             setSettingsOpen(false)
           }}
           onClose={() => setSettingsOpen(false)}
