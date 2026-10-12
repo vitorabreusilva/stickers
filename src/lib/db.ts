@@ -3,6 +3,7 @@ import { LEGACY_BOOK_ID, type CoverBackground, type CoverLayout } from './books'
 import type { ColoringDetail } from './coloring'
 import type { FolderColor, FolderKey } from './folders'
 import type { StickerEffect } from './effects'
+import type { StickerAi } from './smart-groups'
 import type { StickerAnalysis, TopicId } from './topics'
 
 export interface StickerRecord {
@@ -20,6 +21,8 @@ export interface StickerRecord {
    * effects existed simply don't have it, and read as 'none' (see effectOf).
    */
   effect?: StickerEffect
+  /** What the AI says it shows, and the AI folder it's in. Only when signed in to a server with AI keys. */
+  ai?: StickerAi
 }
 
 /** How the user dressed up a folder in the collection. */

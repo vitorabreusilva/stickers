@@ -39,6 +39,8 @@ function cleanSticker(raw: unknown): SyncSticker {
   if (s.deleted) return { id: s.id, deleted: true, width: 0, height: 0, createdAt: 0 }
   const analysis = s.analysis && typeof s.analysis === 'object' ? s.analysis : null
   if (analysis && JSON.stringify(analysis).length > 64_000) throw new BadRequest('Analysis too large')
+  const ai = s.ai && typeof s.ai === 'object' && !Array.isArray(s.ai) ? s.ai : null
+  if (ai && JSON.stringify(ai).length > 4_000) throw new BadRequest('AI description too large')
   return {
     id: s.id,
     width: int(s.width),
@@ -47,6 +49,7 @@ function cleanSticker(raw: unknown): SyncSticker {
     analysis,
     topic: optional(s.topic, 40),
     effect: optional(s.effect, 40),
+    ...(s.ai !== undefined && { ai }),
   }
 }
 
@@ -111,10 +114,13 @@ async function push(db: Db, userId: string, body: SyncPush) {
     // reading "everything after N" can't skip a row that commits late.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`)
 
-    if (newStickers.length) {
+    // Devices that don't know about AI folders leave what the AI said about a sticker alone.
+    for (const knowsAi of [false, true]) {
+      const batch = newStickers.filter((s) => (s.ai !== undefined) === knowsAi)
+      if (!batch.length) continue
       await tx
         .insert(stickers)
-        .values(newStickers.map((s) => ({ ...s, userId, deleted: !!s.deleted })))
+        .values(batch.map((s) => ({ ...s, ai: s.ai ?? null, userId, deleted: !!s.deleted })))
         .onConflictDoUpdate({
           target: [stickers.userId, stickers.id],
           set: {
@@ -126,6 +132,7 @@ async function push(db: Db, userId: string, body: SyncPush) {
             analysis: sql`excluded.analysis`,
             topic: sql`excluded.topic`,
             effect: sql`excluded.effect`,
+            ...(knowsAi && { ai: sql`excluded.ai` }),
           },
         })
     }
@@ -266,6 +273,7 @@ async function pull(db: Db, userId: string, since: number): Promise<SyncPull> {
               analysis: (row.analysis as SyncSticker['analysis']) ?? null,
               topic: row.topic,
               effect: row.effect,
+              ai: (row.ai as SyncSticker['ai']) ?? null,
             },
       )
     } else if (item.kind === 'folder') {

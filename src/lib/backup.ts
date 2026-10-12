@@ -1,3 +1,4 @@
+import { parseStickerAi } from './smart-groups'
 import { base64ToBytes, bytesToBase64, decodeAnalysis, encodeAnalysis, type EncodedAnalysis } from './codec'
 import { DEFAULT_STYLE, isCoverBackground, isCoverLayout } from './books'
 import type { BookPageRecord, BookRecord, FolderRecord, StickerRecord } from './db'
@@ -99,8 +100,9 @@ export async function readBackup(file: Blob): Promise<BackupContents> {
 
   const stickers = (data.stickers ?? []).map((s) => {
     if (typeof s.id !== 'string') throw new BackupError('The backup has a broken sticker')
-    const sticker = { ...s, blob: decodeBlob(s.blob, 'a sticker'), analysis: decodeAnalysis(s.analysis) }
+    const sticker = { ...s, blob: decodeBlob(s.blob, 'a sticker'), analysis: decodeAnalysis(s.analysis), ai: parseStickerAi(s.ai) }
     if (!sticker.analysis) delete sticker.analysis
+    if (!sticker.ai) delete sticker.ai
     return sticker as StickerRecord
   })
   const book = (data.book ?? []).map((p) => {

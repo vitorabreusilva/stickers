@@ -21,6 +21,8 @@ export interface SyncSticker {
   analysis?: EncodedAnalysis | null
   topic?: string | null
   effect?: string | null
+  /** What the AI says it shows, and its AI folder (see smart-groups). Missing from devices that haven't updated. */
+  ai?: object | null
 }
 
 export interface SyncFolder {

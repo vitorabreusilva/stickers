@@ -17,6 +17,7 @@ import {
   type AiSize,
 } from '../src/lib/ai-coloring.js'
 import type { ColoringDetail } from '../src/lib/coloring.js'
+import { folderProvider } from './grouping.js'
 import type { SignedIn } from './sync.js'
 
 const SIZES: AiSize[] = ['1024x1024', '1536x1024', '1024x1536']
@@ -37,7 +38,8 @@ export const aiRoutes = new Hono<SignedIn>()
 
 aiRoutes.get('/ai/providers', (c) => {
   c.header('Cache-Control', 'no-store')
-  return c.json({ providers: serverProviders() })
+  // `folders`: whether the server can sort stickers into AI folders.
+  return c.json({ providers: serverProviders(), folders: !!folderProvider() })
 })
 
 aiRoutes.post(

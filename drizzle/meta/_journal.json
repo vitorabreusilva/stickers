@@ -22,6 +22,13 @@
       "when": 1791845358600,
       "tag": "0002_page_color_guide",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791846195297,
+      "tag": "0003_sticker_ai",
+      "breakpoints": true
     }
   ]
 }

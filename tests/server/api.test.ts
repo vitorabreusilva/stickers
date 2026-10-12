@@ -105,7 +105,7 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
         await pushJson(me.cookie, {
           stickers: [
             { id: 's1', width: 512, height: 600, createdAt: 1, topic: 'dogs', analysis: { version: 1, embedding: 'AAAA' } },
-            { id: 's2', width: 10, height: 10, createdAt: 2, effect: 'holo' },
+            { id: 's2', width: 10, height: 10, createdAt: 2, effect: 'holo', ai: { subject: 'Bluey', folder: { name: 'Bluey', emoji: '🐶' } } },
           ],
           folders: [{ key: 'dogs', color: 'mint' }],
           book: [
@@ -121,8 +121,17 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     const first = await pullJson(me.cookie)
     expect(first.more).toBe(false)
     expect(first.stickers).toEqual([
-      { id: 's1', width: 512, height: 600, createdAt: 1, topic: 'dogs', effect: null, analysis: { version: 1, embedding: 'AAAA' } },
-      { id: 's2', width: 10, height: 10, createdAt: 2, topic: null, effect: 'holo', analysis: null },
+      { id: 's1', width: 512, height: 600, createdAt: 1, topic: 'dogs', effect: null, analysis: { version: 1, embedding: 'AAAA' }, ai: null },
+      {
+        id: 's2',
+        width: 10,
+        height: 10,
+        createdAt: 2,
+        topic: null,
+        effect: 'holo',
+        analysis: null,
+        ai: { subject: 'Bluey', folder: { name: 'Bluey', emoji: '🐶' } },
+      },
     ])
     expect(first.folders).toEqual([{ key: 'dogs', color: 'mint' }])
     // Pages from devices that don't know about books yet land in the first book.
@@ -132,6 +141,11 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     ])
     expect(first.books).toEqual([{ id: 'b2', title: 'Holiday', background: 'night', layout: 'wild', createdAt: 4 }])
     expect(first.settings).toEqual({ bookTitle: 'Rex' })
+
+    // A device that doesn't know about AI folders leaves what the AI said alone.
+    await pushJson(me.cookie, { stickers: [{ id: 's2', width: 10, height: 10, createdAt: 2, topic: 'cartoons' }] })
+    const edited = await pullJson(me.cookie, first.rev)
+    expect(edited.stickers[0]).toMatchObject({ id: 's2', topic: 'cartoons', ai: { subject: 'Bluey' } })
 
     // Only what changed comes back next time, deletions included.
     await pushJson(me.cookie, {

@@ -9,7 +9,7 @@ import { LassoEditor } from './components/LassoEditor'
 import { StickerDetail } from './components/StickerDetail'
 import { StickerPreview } from './components/StickerPreview'
 import { cutoutPreferred, preloadCutout } from './lib/cutout'
-import { newId, requestPersistentStorage } from './lib/db'
+import { newId, requestPersistentStorage, type StickerRecord } from './lib/db'
 import { signIn, SIGN_IN_ERROR_PARAM } from './lib/account'
 import { canReadClipboard, firstImageFile, readClipboardImage, takeSharedImage } from './lib/device'
 import { folderColor, folderLabel, type FolderKey } from './lib/folders'
@@ -17,8 +17,10 @@ import type { Point } from './lib/geometry'
 import { loadImage, type LoadedImage } from './lib/image'
 import type { StickerEffect } from './lib/effects'
 import type { StickerImage } from './lib/sticker'
-import { assignTopics, groupByTopic } from './lib/topics'
+import { aiFolderLabels, aiKey, assignGroups, isAiKey, withoutFolder } from './lib/smart-groups'
+import { groupByTopic, type GroupKey } from './lib/topics'
 import { useAccount } from './hooks/useAccount'
+import { useAiFolders } from './hooks/useAiFolders'
 import { useAutoAnalysis } from './hooks/useAutoAnalysis'
 import { useColoringBooks } from './hooks/useColoringBooks'
 import { useFolderColors } from './hooks/useFolderColors'
@@ -40,15 +42,23 @@ export function App() {
   const { stickers, add, remove, update } = useStickers()
   const books = useColoringBooks()
   // Sort stickers into topics in the background, and regroup whenever anything changes.
-  const sorting = useAutoAnalysis(stickers, update)
-  const topics = useMemo(() => assignTopics(stickers ?? []), [stickers])
+  const analysing = useAutoAnalysis(stickers, update)
+  const { account, sync, syncNow, signOut } = useAccount()
+  // When signed in, the AI also names what's in each sticker and sorts them into folders.
+  const aiFolders = useAiFolders(stickers, update, account.status === 'signed-in')
+  const sorting = analysing || !!aiFolders.busy
+  const topics = useMemo(() => assignGroups(stickers ?? [], aiFolders.preferred), [stickers, aiFolders.preferred])
   const groups = useMemo(() => groupByTopic(stickers ?? [], topics), [stickers, topics])
+  const labels = useMemo(() => aiFolderLabels(stickers ?? []), [stickers])
+  const aiFolderList = useMemo(
+    () => groups.flatMap((g) => (g.key !== 'new' && isAiKey(g.key) ? [{ key: g.key, ...labels.get(g.key)! }] : [])).filter((f) => f.name),
+    [groups, labels],
+  )
   const { colors, setColor } = useFolderColors()
   const [toast, showToast] = useToast()
   const [freshId, setFreshId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
-  const { account, sync, syncNow, signOut } = useAccount()
 
   const openImage = useCallback(
     async (blob: Blob) => {
@@ -74,6 +84,20 @@ export function App() {
     } catch {
       showToast('Clipboard access was blocked')
     }
+  }
+
+  /** Moves a sticker to a folder by hand, or back to being sorted automatically with null. */
+  const moveSticker = (sticker: StickerRecord, to: GroupKey | null) => {
+    if (to === null) {
+      const ai = sticker.ai?.folder?.pinned ? withoutFolder(sticker.ai) : sticker.ai
+      return update(sticker.id, { topic: undefined, ai })
+    }
+    if (isAiKey(to)) {
+      const label = labels.get(to)
+      if (!sticker.ai || !label || aiKey(label.name) !== to) return Promise.resolve()
+      return update(sticker.id, { topic: undefined, ai: { ...sticker.ai, folder: { ...label, pinned: true } } })
+    }
+    return update(sticker.id, { topic: to })
   }
 
   const saveSticker = async ({ blob, width, height }: StickerImage, effect: StickerEffect) => {
@@ -131,6 +155,7 @@ export function App() {
       <Collection
         stickers={stickers}
         groups={groups}
+        labels={labels}
         colors={colors}
         sorting={sorting}
         freshId={freshId}
@@ -169,7 +194,7 @@ export function App() {
           case 'preview':
             return <StickerPreview key={i} image={screen.image} loop={screen.loop} onBack={back} onSave={saveSticker} />
           case 'folder': {
-            const { emoji, name } = folderLabel(screen.key, sorting)
+            const { emoji, name } = folderLabel(screen.key, sorting, labels)
             const items =
               screen.key === 'all' ? (stickers ?? []) : (groups.find((g) => g.key === screen.key)?.items ?? [])
             return (
@@ -196,9 +221,10 @@ export function App() {
                 key={i}
                 sticker={sticker}
                 topic={topics.get(sticker.id)}
+                aiFolders={aiFolderList}
                 onClose={back}
                 toast={showToast}
-                onTopic={(topic) => update(sticker.id, { topic: topic ?? undefined })}
+                onTopic={(to) => moveSticker(sticker, to)}
                 onEffect={(effect) => update(sticker.id, { effect })}
                 onColor={() => push({ kind: 'coloring', id: sticker.id })}
                 onDelete={async () => {
@@ -262,6 +288,7 @@ export function App() {
           sync={sync}
           onSyncNow={syncNow}
           onSignOut={signOut}
+          aiFolders={aiFolders}
           onClose={() => setBackupOpen(false)}
           toast={showToast}
         />

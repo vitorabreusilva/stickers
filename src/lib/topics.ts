@@ -37,6 +37,9 @@ export const TOPICS: Record<TopicId, { name: string; emoji: string }> = {
 
 export const TOPIC_IDS = Object.keys(TOPICS) as TopicId[]
 
+/** A folder stickers are grouped in: a fixed topic, or a folder the AI made (see smart-groups). */
+export type GroupKey = TopicId | `ai:${string}`
+
 /** What the analysis worker records about a sticker. */
 export interface StickerAnalysis {
   /** Bump when the analysis itself changes, so older stickers get re-analysed. */
@@ -222,9 +225,9 @@ export function assignTopics(stickers: Topicable[]): Map<string, TopicId | undef
   return result
 }
 
-/** A group in the collection: a topic, or 'new' for stickers that haven't been analysed yet. */
+/** A group in the collection: a folder, or 'new' for stickers that haven't been sorted yet. */
 export interface TopicGroup<T> {
-  key: TopicId | 'new'
+  key: GroupKey | 'new'
   items: T[]
 }
 
@@ -232,21 +235,22 @@ export interface TopicGroup<T> {
  * Groups items by their topic, keeping their order within each group. Unsorted ones come first
  * (they're the newest), then the biggest groups, with "Other" always last.
  */
-export function groupByTopic<T extends { id: string }>(items: T[], topics: Map<string, TopicId | undefined>): TopicGroup<T>[] {
-  const groups = new Map<TopicId | 'new', T[]>()
+export function groupByTopic<T extends { id: string }>(items: T[], topics: Map<string, GroupKey | undefined>): TopicGroup<T>[] {
+  const groups = new Map<GroupKey | 'new', T[]>()
   for (const item of items) {
     const key = topics.get(item.id) ?? 'new'
     let group = groups.get(key)
     if (!group) groups.set(key, (group = []))
     group.push(item)
   }
-  const rank = (key: TopicId | 'new') => (key === 'new' ? -1 : key === 'other' ? 1 : 0)
+  const rank = (key: GroupKey | 'new') => (key === 'new' ? -1 : key === 'other' ? 1 : 0)
   return [...groups]
     .map(([key, items]) => ({ key, items }))
     .sort(
       (a, b) =>
         rank(a.key) - rank(b.key) ||
         b.items.length - a.items.length ||
-        TOPIC_IDS.indexOf(a.key as TopicId) - TOPIC_IDS.indexOf(b.key as TopicId),
+        TOPIC_IDS.indexOf(a.key as TopicId) - TOPIC_IDS.indexOf(b.key as TopicId) ||
+        a.key.localeCompare(b.key),
     )
 }

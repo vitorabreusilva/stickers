@@ -234,3 +234,93 @@ test('coloring books follow you to another device', async ({ browser }) => {
   await phoneSheet.getByRole('button', { name: 'Close' }).click()
   await expect(phoneShelf.getByRole('button', { name: 'Made on laptop, 0 pages' })).toBeVisible({ timeout: 10_000 })
 })
+
+test('AI folders sort a signed-in collection and follow it to other devices', async ({ browser }) => {
+  test.setTimeout(120_000)
+  const cookies = await account()
+  const phone = await device(browser, cookies)
+  const laptop = await device(browser, cookies)
+
+  // The server's AI stands in: three Bluey characters and a pizza.
+  const subjects = ['Bluey', 'Bingo', 'Bandit', 'Pizza slice']
+  let described = 0
+  const groupings: { stickers: { id: string; series: string }[]; folders: { name: string }[] }[] = []
+  await phone.route('**/api/ai/providers', (route) => route.fulfill({ json: { providers: [], folders: true } }))
+  await phone.route('**/api/ai/describe', (route) => {
+    const subject = subjects[described++ % subjects.length]
+    const bluey = subject !== 'Pizza slice'
+    route.fulfill({
+      json: { version: 1, subject, series: bluey ? 'Bluey' : '', tags: ['cartoon'], topic: bluey ? 'cartoons' : 'food' },
+    })
+  })
+  await phone.route('**/api/ai/group', (route) => {
+    const request = route.request().postDataJSON()
+    groupings.push(request)
+    route.fulfill({
+      json: {
+        assignments: request.stickers.map((s: { id: string; series: string }) =>
+          s.series === 'Bluey' ? { id: s.id, name: 'Bluey', emoji: '🐶' } : { id: s.id, name: 'Food', emoji: '🍕' },
+        ),
+      },
+    })
+  })
+
+  await phone.goto('/')
+  const image = await phone.evaluate(async () => {
+    const canvas = new OffscreenCanvas(60, 60)
+    canvas.getContext('2d')!.fillRect(0, 0, 60, 60)
+    return btoa(String.fromCharCode(...new Uint8Array(await (await canvas.convertToBlob()).arrayBuffer())))
+  })
+  const backup = {
+    format: 'stickers-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    folders: [],
+    bookTitle: null,
+    stickers: [1, 2, 3, 4].map((n) => ({ id: `s${n}`, width: 60, height: 60, createdAt: n, blob: { type: 'image/png', base64: image } })),
+    book: [],
+  }
+  await phone.getByRole('button', { name: 'Settings' }).click()
+  const phoneSheet = phone.getByRole('dialog', { name: 'Settings' })
+  await phoneSheet.getByTestId('backup-input').setInputFiles({ name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) })
+  await phoneSheet.getByRole('button', { name: 'Restore' }).click()
+
+  const folders = phone.getByRole('list', { name: 'Folders' })
+  await expect(folders.getByRole('button', { name: 'Bluey, 3 stickers' })).toBeVisible({ timeout: 20_000 })
+  await expect(folders.getByRole('button', { name: 'Food, 1 sticker' })).toBeVisible()
+  // All four went to the AI together, as one batch.
+  expect(groupings).toHaveLength(1)
+  expect(groupings[0].stickers).toHaveLength(4)
+
+  // Moving one by hand into an AI folder sticks.
+  await folders.getByRole('button', { name: 'Food, 1 sticker' }).click()
+  await phone.getByRole('dialog', { name: 'Food' }).getByRole('button', { name: 'Open sticker' }).click()
+  const detail = phone.getByRole('dialog', { name: 'Sticker', exact: true })
+  await detail.getByRole('button', { name: /Food/ }).click()
+  await phone.getByRole('group', { name: 'Your folders' }).getByRole('button', { name: '🐶 Bluey' }).click()
+  await expect(detail.getByText('your pick')).toBeVisible()
+  await phone.goBack()
+  await phone.goBack()
+  // Just the one folder now, so no "All stickers" either.
+  await expect(folders.getByRole('button')).toHaveCount(1)
+  await expect(folders.getByRole('button', { name: 'Bluey, 4 stickers' })).toBeVisible()
+
+  // Sorting everything again leaves the hand-placed one out.
+  await phone.getByRole('button', { name: 'Settings' }).click()
+  await phoneSheet.getByRole('button', { name: 'Sort everything again' }).click()
+  await expect(phone.getByText('Sorted into new folders!')).toBeVisible()
+  expect(groupings).toHaveLength(2)
+  const pizza = groupings[0].stickers.find((s) => !s.series)!.id
+  expect(groupings[1].stickers.map((s) => s.id).sort()).toEqual(['s1', 's2', 's3', 's4'].filter((id) => id !== pizza))
+  expect(groupings[1].folders.map((f) => f.name)).toEqual(['Bluey'])
+  await expect(phoneSheet.getByText(/^Synced at /)).toBeVisible({ timeout: 15_000 })
+  await phoneSheet.getByRole('button', { name: 'Close' }).click()
+
+  // The laptop's server has no AI, but it gets the folders with the stickers.
+  await laptop.goto('/')
+  const laptopFolders = laptop.getByRole('list', { name: 'Folders' })
+  await expect(laptopFolders.getByRole('button', { name: 'Bluey, 4 stickers' })).toBeVisible({ timeout: 15_000 })
+  await laptop.getByRole('button', { name: 'Settings' }).click()
+  await expect(laptop.getByRole('dialog', { name: 'Settings' }).getByText(E2E_EMAIL)).toBeVisible()
+  await expect(laptop.getByRole('switch', { name: 'AI folders' })).toHaveCount(0)
+})
