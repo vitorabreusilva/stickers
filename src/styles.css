@@ -300,6 +300,21 @@ button {
   --folder-glow: rgba(10, 6, 20, 0.5);
 }
 
+/* Lift black off the dark background so the folder and its swatch stay visible. */
+@media (prefers-color-scheme: dark) {
+  [data-color='black'] {
+    --folder: #3d3848;
+    --folder-back: #26222e;
+    --folder-glow: rgba(0, 0, 0, 0.6);
+  }
+
+  .swatch[data-color='black'] {
+    box-shadow:
+      inset 0 0 0 1.5px rgba(255, 255, 255, 0.35),
+      0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+}
+
 [data-color='sky'] {
   --folder: #97cbff;
   --folder-back: #64a9f0;
@@ -377,7 +392,7 @@ button {
   height: 58%;
   padding: 12px 14px;
   overflow: hidden;
-  background-color: color-mix(in srgb, var(--folder) 78%, transparent);
+  background-color: color-mix(in srgb, var(--folder) 62%, transparent);
   background-image:
     linear-gradient(160deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 45%),
     linear-gradient(to top, rgba(0, 0, 0, 0.08), transparent 60%);
