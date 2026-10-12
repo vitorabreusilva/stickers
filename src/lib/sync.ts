@@ -31,6 +31,13 @@ import { IMAGE_TYPES, type ImageKind, type SyncBook, type SyncPull, type SyncPus
 import type { TopicId } from './topics'
 
 const PUSH_BATCH = 50
+/**
+ * Raised whenever the server starts sending something earlier versions of the app didn't keep (2:
+ * coloring books, and which book each page is in). An installed app opens on its cached version
+ * after an update and syncs once before the new one takes over, so that old version can move the
+ * cursor past records it threw away. A new version pulls everything again to pick those up.
+ */
+const PULL_VERSION = 2
 const DOWNLOADS_AT_ONCE = 4
 
 /** The server said we're not signed in (any more). */
@@ -232,6 +239,11 @@ export async function syncOnce(accountKey: string) {
     await queueEverything({ bookTitle: storedBookTitle() !== null })
     await setMeta('cursor', 0)
     await setMeta('account', accountKey)
+    await setMeta('pullVersion', PULL_VERSION)
+  }
+  if ((await getMeta<number>('pullVersion')) !== PULL_VERSION) {
+    await setMeta('cursor', 0)
+    await setMeta('pullVersion', PULL_VERSION)
   }
   // Bounded, in case edits keep arriving while we send.
   for (let i = 0; i < 1000 && (await pushBatch()); i++);
