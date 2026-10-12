@@ -452,6 +452,12 @@ button {
   margin-bottom: 8px;
 }
 
+.topic-picker-ai {
+  padding-bottom: 12px;
+  border-bottom: 1.5px solid var(--line);
+  margin-bottom: 12px;
+}
+
 .topic-picker-auto,
 .topic-picker-cancel {
   width: 100%;
@@ -1509,6 +1515,16 @@ button {
 
 .google-btn {
   align-self: stretch;
+}
+
+.ai-folders {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-folders-switch {
+  max-width: none;
 }
 
 .account-who {

@@ -12,6 +12,8 @@ import { CloseIcon, GoogleIcon, PasteIcon, PlusIcon, SettingsIcon, StarMascot } 
 interface Props {
   stickers: Sticker[] | null
   groups: TopicGroup<Sticker>[]
+  /** Names of the AI folders. */
+  labels: ReadonlyMap<string, { name: string; emoji: string }>
   /** Colours picked for folders; null while loading. */
   colors: ReadonlyMap<string, FolderColor> | null
   /** Whether stickers are being sorted into topics right now. */
@@ -38,6 +40,7 @@ const LATEST = 5
 export function Collection({
   stickers,
   groups,
+  labels,
   colors,
   sorting,
   freshId,
@@ -159,7 +162,7 @@ export function Collection({
           <h2 id="folders-heading">Folders</h2>
           <ul className="folders" aria-label="Folders">
             {folders.map(({ key, items }) => {
-              const { emoji, name } = folderLabel(key, sorting)
+              const { emoji, name } = folderLabel(key, sorting, labels)
               return (
                 <li key={key}>
                   <Folder

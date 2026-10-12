@@ -5,7 +5,9 @@ import { readAll, restoreAll } from '../lib/db'
 import { canShareFile, downloadBlob, shareFile } from '../lib/device'
 import type { AccountState } from '../lib/account'
 import type { SyncStatus } from '../hooks/useAccount'
+import type { AiFolders } from '../hooks/useAiFolders'
 import { AccountSection } from './AccountSection'
+import { AiFoldersSection } from './AiFoldersSection'
 import { CloseIcon, DownloadIcon, ShareIcon } from './icons'
 
 interface Props {
@@ -13,6 +15,7 @@ interface Props {
   sync: SyncStatus
   onSyncNow: () => void
   onSignOut: () => Promise<void>
+  aiFolders: AiFolders
   onClose: () => void
   toast: (message: string) => void
 }
@@ -26,7 +29,7 @@ function sizeLabel(bytes: number) {
 }
 
 /** Sign-in and sync, plus saving the whole collection to one file and bringing one back. */
-export function BackupSheet({ account, sync, onSyncNow, onSignOut, onClose, toast }: Props) {
+export function BackupSheet({ account, sync, onSyncNow, onSignOut, aiFolders, onClose, toast }: Props) {
   // The file is made as soon as the sheet opens, so Download and Share run straight from the tap;
   // Safari drops the share sheet if the tap is followed by a long await.
   const [prepared, setPrepared] = useState<Prepared | 'error' | null>(null)
@@ -123,6 +126,13 @@ export function BackupSheet({ account, sync, onSyncNow, onSignOut, onClose, toas
             {account.status !== 'unavailable' && (
               <>
                 <AccountSection account={account} sync={sync} onSyncNow={onSyncNow} onSignOut={onSignOut} toast={toast} />
+                {aiFolders.available && (
+                  <>
+                    <hr className="backup-divider" />
+                    <h3 className="backup-heading">AI folders</h3>
+                    <AiFoldersSection aiFolders={aiFolders} toast={toast} />
+                  </>
+                )}
                 <hr className="backup-divider" />
                 <h3 className="backup-heading">Backup file</h3>
               </>

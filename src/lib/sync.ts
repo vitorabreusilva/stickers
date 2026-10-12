@@ -26,6 +26,7 @@ import {
 import { DEFAULT_STYLE, isCoverBackground, isCoverLayout, LEGACY_BOOK_ID } from './books'
 import type { ColoringDetail } from './coloring'
 import type { StickerEffect } from './effects'
+import { parseStickerAi } from './smart-groups'
 import { isFolderColor, type FolderKey } from './folders'
 import { IMAGE_TYPES, type ImageKind, type SyncBook, type SyncPull, type SyncPush, type SyncSticker } from './sync-protocol'
 import type { TopicId } from './topics'
@@ -33,11 +34,12 @@ import type { TopicId } from './topics'
 const PUSH_BATCH = 50
 /**
  * Raised whenever the server starts sending something earlier versions of the app didn't keep (2:
- * coloring books, and which book each page is in; 3: pages with their colour guide hidden). An installed app opens on its cached version
+ * coloring books, and which book each page is in; 3: pages with their colour guide hidden;
+ * 4: what the AI says each sticker shows, and its AI folder). An installed app opens on its cached version
  * after an update and syncs once before the new one takes over, so that old version can move the
  * cursor past records it threw away. A new version pulls everything again to pick those up.
  */
-const PULL_VERSION = 3
+const PULL_VERSION = 4
 const DOWNLOADS_AT_ONCE = 4
 
 /** The server said we're not signed in (any more). */
@@ -76,6 +78,7 @@ const stickerToSync = (s: StickerRecord): SyncSticker => ({
   analysis: s.analysis ? encodeAnalysis(s.analysis) : null,
   topic: s.topic ?? null,
   effect: s.effect ?? null,
+  ai: s.ai ?? null,
 })
 
 const pageToSync = (p: BookPageRecord) => ({
@@ -181,6 +184,7 @@ async function pullPage(): Promise<boolean> {
     const blob = (await getSticker(s.id)) ? undefined : await downloadImage('sticker', s.id)
     if (blob === null) return
     const analysis = decodeAnalysis(s.analysis)
+    const ai = parseStickerAi(s.ai)
     stickers.push({
       key: s.id,
       record: {
@@ -191,6 +195,7 @@ async function pullPage(): Promise<boolean> {
         ...(analysis && { analysis }),
         ...(s.topic && { topic: s.topic as TopicId }),
         ...(s.effect && { effect: s.effect as StickerEffect }),
+        ...(ai && { ai }),
         ...(blob && { blob }),
       },
     })

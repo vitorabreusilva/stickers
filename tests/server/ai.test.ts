@@ -24,7 +24,7 @@ describe('AI routes', () => {
     vi.stubEnv('FAL_KEY', ' ')
     vi.stubEnv('QUIVER_API_KEY', '')
     const response = await app.request('/ai/providers')
-    expect(await response.json()).toEqual({ providers: ['google'] })
+    expect(await response.json()).toEqual({ providers: ['google'], folders: true })
   })
 
   it('draws with the server key and sends back the picture', async () => {

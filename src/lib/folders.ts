@@ -1,5 +1,6 @@
 // Folders in the collection: one per topic group, plus "All stickers". Pure functions, no DOM.
-import { TOPICS, type TopicGroup } from './topics'
+import { groupLabel } from './smart-groups'
+import type { TopicGroup } from './topics'
 
 /** A folder: a topic group, 'new' for stickers still being sorted, or 'all' for everything. */
 export type FolderKey = 'all' | TopicGroup<unknown>['key']
@@ -32,10 +33,15 @@ export function folderColor(key: FolderKey, saved: ReadonlyMap<string, FolderCol
   return saved.get(key) ?? defaultFolderColor(key)
 }
 
-export function folderLabel(key: FolderKey, sorting: boolean): { emoji: string; name: string } {
+/** `labels` names the AI folders (see aiFolderLabels). */
+export function folderLabel(
+  key: FolderKey,
+  sorting: boolean,
+  labels: ReadonlyMap<string, { name: string; emoji: string }> = new Map(),
+): { emoji: string; name: string } {
   if (key === 'all') return { emoji: '🗂️', name: 'All stickers' }
   if (key === 'new') return { emoji: '⏳', name: sorting ? 'Sorting…' : 'Not sorted yet' }
-  return TOPICS[key]
+  return groupLabel(key, labels)
 }
 
 /** How many stickers peek out of a folder. */

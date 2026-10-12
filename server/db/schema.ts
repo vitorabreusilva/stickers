@@ -98,6 +98,8 @@ export const stickers = pgTable(
     analysis: jsonb('analysis'),
     topic: text('topic'),
     effect: text('effect'),
+    /** What the AI says the sticker shows, and its AI folder. */
+    ai: jsonb('ai'),
   },
   (t) => [primaryKey({ columns: [t.userId, t.id] }), index('stickers_rev_idx').on(t.userId, t.rev)],
 )
