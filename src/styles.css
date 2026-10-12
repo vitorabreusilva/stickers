@@ -1215,6 +1215,56 @@ button {
   margin-bottom: 4px;
 }
 
+/* Backup */
+
+.collection-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.backup-btn {
+  color: var(--ink-soft);
+}
+
+.backup-sheet {
+  gap: 12px;
+}
+
+.backup-text {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.backup-done {
+  padding: 24px 0;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.backup-summary {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.backup-divider {
+  width: 100%;
+  margin: 6px 0 0;
+  border: 0;
+  border-top: 1.5px dashed var(--line);
+}
+
+.backup-restore {
+  align-self: center;
+}
+
 /* Coloring book */
 
 .book-btn {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { composeCover, pagesToPdf, printPages, type CoverSticker } from '../lib/book-render'
+import { DEFAULT_TITLE, storeBookTitle, storedBookTitle } from '../lib/book-title'
 import { downloadBlob } from '../lib/device'
 import { canvasToBlob } from '../lib/image'
 import type { BookPage } from '../hooks/useColoringBook'
@@ -13,15 +14,8 @@ interface Props {
   toast: (message: string) => void
 }
 
-const TITLE_KEY = 'stickers.bookTitle'
-const DEFAULT_TITLE = 'My Coloring Book'
-
 function savedTitle() {
-  try {
-    return localStorage.getItem(TITLE_KEY) ?? DEFAULT_TITLE
-  } catch {
-    return DEFAULT_TITLE
-  }
+  return storedBookTitle() ?? DEFAULT_TITLE
 }
 
 /** Every sticker used in the book, once each, in page order. */
@@ -71,11 +65,7 @@ export function BookView({ pages, onRemove, onMove, onClose, toast }: Props) {
 
   const changeTitle = (value: string) => {
     setTitle(value)
-    try {
-      localStorage.setItem(TITLE_KEY, value)
-    } catch {
-      // Not remembering the title is fine.
-    }
+    storeBookTitle(value)
   }
 
   const savePdf = async () => {

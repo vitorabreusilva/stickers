@@ -40,6 +40,15 @@ export const ExpandIcon = () => (
   </Icon>
 )
 
+/** A box with an arrow, for backing up and restoring the collection. */
+export const BackupIcon = () => (
+  <Icon>
+    <path d="M4 8.5h16v10a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5z" />
+    <path d="M3 4.5h18v4H3z" />
+    <path d="M12 11.5v6M9.5 15l2.5 2.5 2.5-2.5" />
+  </Icon>
+)
+
 export const ScissorsIcon = () => (
   <Icon>
     <circle cx="6" cy="6" r="3" />

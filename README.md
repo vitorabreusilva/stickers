@@ -11,6 +11,7 @@ A mobile-first PWA for collecting stickers from pictures you find online. Pick a
 - **Collection**: stickers are stored on the device in IndexedDB and work offline. Open one to share it, copy it to the clipboard, download it as a PNG, or delete it.
 - **Grouped by topic**: stickers are sorted automatically into topics such as People, Dogs, Food & drinks and Cartoons & art, using small on-device models. Nothing leaves the phone. Tap a topic chip to filter, or move a sticker to another topic by hand from its detail view.
 - **Coloring book** *(beta)*: open a sticker and tap *Color* to turn it into line art on an A5 page (148 × 210 mm), ready to print and colour in with pencils. **✨ AI** has an image model redraw the sticker as clean, professional line art: OpenAI GPT Image, Google Nano Banana 2, FLUX Kontext Pro, Seedream 4 and Qwen Image Edit on fal.ai, or QuiverAI's Arrow 2, which draws true vector (SVG) line art. It uses your own API keys (set them in *AI settings*; they're stored only on your device, and you pay the provider per page). When a model declines a sticker, the page offers the others you've set up. **Free** traces the lines on the device, offline. Pick Simple, Medium or Detailed, and optionally put the original sticker in the corner as a colour guide. Print the page or save it as a PDF, or add it to your coloring book. The book gets a cover made from all the stickers you used, with a title you choose, and prints or saves as one PDF.
+- **Backup**: the box button on the home screen saves the whole collection (stickers, folder colours, coloring book) to one JSON file, and restores one. Restoring adds to what's there and never deletes. AI keys aren't included.
 - **Private and offline**: pictures never leave the device. After the first cutout, the model is cached and background removal works offline too.
 
 ## Development
@@ -64,6 +65,7 @@ The app will be at `https://<user>.github.io/<repo>/`. The workflow reads the ba
 | A5 pages, cover collage, printing | `src/lib/book-layout.ts`, `src/lib/book-render.ts` |
 | PDF export | `src/lib/pdf.ts` |
 | Storage | `src/lib/db.ts` |
+| Backup file format, export and restore | `src/lib/backup.ts`, `src/components/BackupSheet.tsx` |
 | Service worker and share target | `src/sw.ts` |
 
 **Background removal** uses Google's [MediaPipe Interactive Segmenter](https://ai.google.dev/edge/mediapipe/solutions/vision/interactive_segmenter) v2 ("Magic Touch"), which accepts a lasso stroke as the prompt. It runs in a Web Worker so the UI stays responsive. It uses the GPU when there's a real one, and falls back to the CPU (WebAssembly) otherwise.

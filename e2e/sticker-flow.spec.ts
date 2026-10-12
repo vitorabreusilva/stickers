@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { expect, test, type Page } from '@playwright/test'
+import { devices, expect, test, type Page } from '@playwright/test'
 
 const SKY = [0x7c, 0xc6, 0xff]
 
@@ -573,4 +573,47 @@ test.describe('coloring book', () => {
     await book.getByRole('button', { name: 'Really remove page 1?' }).click()
     await expect(book.getByText('No pages yet')).toBeVisible()
   })
+})
+
+test('back up a collection and restore it on another device', async ({ page, browser }) => {
+  await seedVersion1(page, ['dogs', 'dogs', 'food'])
+  await page.goto('/')
+  const folders = page.getByRole('list', { name: 'Folders' })
+  await folders.getByRole('button', { name: 'Dogs, 2 stickers' }).click()
+  const folder = page.getByRole('dialog', { name: 'Dogs' })
+  await folder.getByRole('radio', { name: 'Mint' }).click()
+  await page.goBack()
+
+  await page.getByRole('button', { name: 'Backup' }).click()
+  const sheet = page.getByRole('dialog', { name: 'Backup' })
+  await expect(sheet.getByText(/^3 stickers · \d+ KB$/)).toBeVisible()
+  const download = page.waitForEvent('download')
+  await sheet.getByRole('button', { name: 'Download backup' }).click()
+  const file = await download
+  expect(file.suggestedFilename()).toMatch(/^stickers-backup-\d{4}-\d{2}-\d{2}\.json$/)
+  const path = (await file.path())!
+
+  // A fresh browser profile stands in for the new device.
+  const other = await (await browser.newContext({ ...devices['Pixel 7'], baseURL: test.info().project.use.baseURL })).newPage()
+  await other.goto('/')
+  await expect(other.getByText('Your sticker book is empty')).toBeVisible()
+  await other.getByRole('button', { name: 'Backup' }).click()
+  const otherSheet = other.getByRole('dialog', { name: 'Backup' })
+  await otherSheet.getByTestId('backup-input').setInputFiles(path)
+  await expect(otherSheet.getByText(/This backup has 3 stickers/)).toBeVisible()
+  await otherSheet.getByRole('button', { name: 'Restore' }).click()
+
+  // The app reloads with everything in place, folder colour included.
+  const otherFolders = other.getByRole('list', { name: 'Folders' })
+  await expect(otherFolders.getByRole('button', { name: 'All stickers, 3 stickers' })).toBeVisible({ timeout: 10_000 })
+  await otherFolders.getByRole('button', { name: 'Dogs, 2 stickers' }).click()
+  await expect(other.getByRole('dialog', { name: 'Dogs' }).getByRole('radio', { name: 'Mint' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  )
+  await other.context().close()
+
+  // A file that isn't a backup is turned away.
+  await sheet.getByTestId('backup-input').setInputFiles({ name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{}') })
+  await expect(page.getByText("That file isn't a Stickers backup")).toBeVisible()
 })
