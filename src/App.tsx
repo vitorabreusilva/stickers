@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Collection } from './components/Collection'
+import { FolderView } from './components/FolderView'
 import { LassoEditor } from './components/LassoEditor'
 import { StickerDetail } from './components/StickerDetail'
 import { StickerPreview } from './components/StickerPreview'
 import { cutoutPreferred, preloadCutout } from './lib/cutout'
 import { newId, requestPersistentStorage } from './lib/db'
 import { canReadClipboard, firstImageFile, readClipboardImage, takeSharedImage } from './lib/device'
+import { folderColor, folderLabel, type FolderKey } from './lib/folders'
 import type { Point } from './lib/geometry'
 import { loadImage, type LoadedImage } from './lib/image'
 import type { StickerImage } from './lib/sticker'
-import { assignTopics } from './lib/topics'
+import { assignTopics, groupByTopic } from './lib/topics'
 import { useAutoAnalysis } from './hooks/useAutoAnalysis'
+import { useFolderColors } from './hooks/useFolderColors'
 import { useNavStack } from './hooks/useNavStack'
 import { useStickers } from './hooks/useStickers'
 import { useToast } from './hooks/useToast'
@@ -19,6 +22,7 @@ type Screen =
   | { kind: 'editor'; image: LoadedImage }
   | { kind: 'preview'; image: LoadedImage; loop: Point[] }
   | { kind: 'detail'; id: string }
+  | { kind: 'folder'; key: FolderKey }
 
 export function App() {
   const { stack, push, back, home } = useNavStack<Screen>()
@@ -26,6 +30,8 @@ export function App() {
   // Sort stickers into topics in the background, and regroup whenever anything changes.
   const sorting = useAutoAnalysis(stickers, update)
   const topics = useMemo(() => assignTopics(stickers ?? []), [stickers])
+  const groups = useMemo(() => groupByTopic(stickers ?? [], topics), [stickers, topics])
+  const { colors, setColor } = useFolderColors()
   const [toast, showToast] = useToast()
   const [freshId, setFreshId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -100,13 +106,15 @@ export function App() {
     <>
       <Collection
         stickers={stickers}
-        topics={topics}
+        groups={groups}
+        colors={colors}
         sorting={sorting}
         freshId={freshId}
         canPaste={canReadClipboard()}
         onImage={openImage}
         onPaste={pasteFromClipboard}
         onOpen={(id) => push({ kind: 'detail', id })}
+        onOpenFolder={(key) => push({ kind: 'folder', key })}
       />
 
       {stack.map((screen, i) => {
@@ -122,6 +130,26 @@ export function App() {
             )
           case 'preview':
             return <StickerPreview key={i} image={screen.image} loop={screen.loop} onBack={back} onSave={saveSticker} />
+          case 'folder': {
+            const { emoji, name } = folderLabel(screen.key, sorting)
+            const items =
+              screen.key === 'all' ? (stickers ?? []) : (groups.find((g) => g.key === screen.key)?.items ?? [])
+            return (
+              <FolderView
+                key={i}
+                name={name}
+                emoji={emoji}
+                items={items}
+                color={folderColor(screen.key, colors ?? new Map())}
+                freshId={freshId}
+                onColor={(color) =>
+                  setColor(screen.key, color).catch(() => showToast("Couldn't save the folder colour"))
+                }
+                onOpen={(id) => push({ kind: 'detail', id })}
+                onClose={back}
+              />
+            )
+          }
           case 'detail': {
             const sticker = stickers?.find((s) => s.id === screen.id)
             if (!sticker) return null

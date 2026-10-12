@@ -1,12 +1,17 @@
-import { useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent } from 'react'
+import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { firstImageFile } from '../lib/device'
-import { groupByTopic, TOPICS, type TopicGroup, type TopicId } from '../lib/topics'
+import { folderColor, folderLabel, type FolderColor, type FolderKey } from '../lib/folders'
+import type { TopicGroup } from '../lib/topics'
 import type { Sticker } from '../hooks/useStickers'
+import { Folder } from './Folder'
+import { StickerGrid } from './StickerGrid'
 import { PasteIcon, PlusIcon, StarMascot } from './icons'
 
 interface Props {
   stickers: Sticker[] | null
-  topics: Map<string, TopicId | undefined>
+  groups: TopicGroup<Sticker>[]
+  /** Colours picked for folders; null while loading. */
+  colors: ReadonlyMap<string, FolderColor> | null
   /** Whether stickers are being sorted into topics right now. */
   sorting: boolean
   freshId: string | null
@@ -14,34 +19,28 @@ interface Props {
   onImage: (file: Blob) => void
   onPaste: () => void
   onOpen: (id: string) => void
+  onOpenFolder: (key: FolderKey) => void
 }
 
-type Filter = 'all' | TopicGroup<Sticker>['key']
-
-/** A stable, slightly playful rotation per sticker so the grid looks hand-placed. */
-function tilt(id: string) {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0
-  return ((Math.abs(hash) % 15) - 7) * 0.9
-}
-
-function groupLabel(key: TopicGroup<Sticker>['key'], sorting: boolean) {
-  if (key === 'new') return { emoji: '⏳', name: sorting ? 'Sorting…' : 'Not sorted yet' }
-  return TOPICS[key]
-}
-
-export function Collection({ stickers, topics, sorting, freshId, canPaste, onImage, onPaste, onOpen }: Props) {
+export function Collection({
+  stickers,
+  groups,
+  colors,
+  sorting,
+  freshId,
+  canPaste,
+  onImage,
+  onPaste,
+  onOpen,
+  onOpenFolder,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
-  const [filter, setFilter] = useState<Filter>('all')
 
   const count = stickers?.length ?? 0
-  const groups = useMemo(() => groupByTopic(stickers ?? [], topics), [stickers, topics])
-  // A filter whose group emptied out (sticker deleted or moved) falls back to everything.
-  const active: Filter = filter !== 'all' && groups.some((g) => g.key === filter) ? filter : 'all'
-  const sections = active === 'all' ? groups : groups.filter((g) => g.key === active)
-  // Headings only pay off once groups have a few stickers each; until then chips are enough.
-  const showHeaders = active === 'all' && groups.length > 1 && count >= groups.length * 2
+  // A single group needs no folders; the stickers go straight on the page.
+  const foldered = groups.length > 1
+  const folders: { key: FolderKey; items: Sticker[] }[] = [{ key: 'all', items: stickers ?? [] }, ...groups]
 
   const onFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = firstImageFile(e.target.files)
@@ -55,23 +54,6 @@ export function Collection({ stickers, topics, sorting, freshId, canPaste, onIma
     const file = firstImageFile(e.dataTransfer.files)
     if (file) onImage(file)
   }
-
-
-  const grid = (items: Sticker[], label: string) => (
-    <ul className="grid" aria-label={label}>
-      {items.map((sticker) => (
-        <li key={sticker.id} style={{ '--tilt': `${tilt(sticker.id)}deg` } as CSSProperties}>
-          <button
-            className={`grid-item${sticker.id === freshId ? ' fresh' : ''}`}
-            onClick={() => onOpen(sticker.id)}
-            aria-label="Open sticker"
-          >
-            <img src={sticker.url} alt="" loading="lazy" decoding="async" draggable={false} />
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
 
   return (
     <div
@@ -90,22 +72,6 @@ export function Collection({ stickers, topics, sorting, freshId, canPaste, onIma
         </h1>
       </header>
 
-      {groups.length > 1 && (
-        <nav className="chips" aria-label="Topics">
-          <button className={`chip${active === 'all' ? ' active' : ''}`} onClick={() => setFilter('all')}>
-            All <span>{count}</span>
-          </button>
-          {groups.map(({ key, items }) => {
-            const { emoji, name } = groupLabel(key, sorting)
-            return (
-              <button key={key} className={`chip${active === key ? ' active' : ''}`} onClick={() => setFilter(key)}>
-                {emoji} {name} <span>{items.length}</span>
-              </button>
-            )
-          })}
-        </nav>
-      )}
-
       {stickers && count === 0 && (
         <section className="empty">
           <StarMascot />
@@ -118,22 +84,30 @@ export function Collection({ stickers, topics, sorting, freshId, canPaste, onIma
       )}
 
       {count > 0 &&
-        (showHeaders
-          ? sections.map(({ key, items }) => {
-              const { emoji, name } = groupLabel(key, sorting)
-              return (
-                <section key={key} className="topic-section">
-                  <h2 className="topic-heading">
-                    <span aria-hidden="true">{emoji}</span> {name} <span className="topic-count">{items.length}</span>
-                  </h2>
-                  {grid(items, name)}
-                </section>
-              )
-            })
-          : grid(
-              active === 'all' ? stickers! : sections[0].items,
-              active === 'all' ? 'Your stickers' : groupLabel(active, sorting).name,
-            ))}
+        (foldered ? (
+          // Wait for the saved colours so folders don't flash their defaults first.
+          colors && (
+            <ul className="folders" aria-label="Folders">
+              {folders.map(({ key, items }) => {
+                const { emoji, name } = folderLabel(key, sorting)
+                return (
+                  <li key={key}>
+                    <Folder
+                      name={name}
+                      emoji={emoji}
+                      items={items}
+                      color={folderColor(key, colors)}
+                      freshId={freshId}
+                      onOpen={() => onOpenFolder(key)}
+                    />
+                  </li>
+                )
+              })}
+            </ul>
+          )
+        ) : (
+          <StickerGrid items={stickers!} label="Your stickers" freshId={freshId} onOpen={onOpen} />
+        ))}
 
       <div className="dock">
         {canPaste && (
