@@ -5,7 +5,7 @@ import type { TopicGroup } from '../lib/topics'
 import type { Sticker } from '../hooks/useStickers'
 import { Folder } from './Folder'
 import { StickerGrid } from './StickerGrid'
-import { PasteIcon, PlusIcon, StarMascot } from './icons'
+import { BookIcon, PasteIcon, PlusIcon, StarMascot } from './icons'
 
 interface Props {
   stickers: Sticker[] | null
@@ -20,6 +20,9 @@ interface Props {
   onPaste: () => void
   onOpen: (id: string) => void
   onOpenFolder: (key: FolderKey) => void
+  /** Pages in the coloring book; null while loading. */
+  bookPages: number | null
+  onOpenBook: () => void
 }
 
 export function Collection({
@@ -33,6 +36,8 @@ export function Collection({
   onPaste,
   onOpen,
   onOpenFolder,
+  bookPages,
+  onOpenBook,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -70,6 +75,13 @@ export function Collection({
           Stickers
           {count > 0 && <span className="count">{count}</span>}
         </h1>
+        {(count > 0 || !!bookPages) && (
+          <button className="book-btn" onClick={onOpenBook} aria-label={`Coloring book, ${bookPages ?? 0} pages`}>
+            <BookIcon />
+            <span>Coloring book</span>
+            {!!bookPages && <span className="book-btn-count">{bookPages}</span>}
+          </button>
+        )}
       </header>
 
       {stickers && count === 0 && (

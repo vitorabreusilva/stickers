@@ -155,6 +155,13 @@ button {
   overflow-x: clip;
 }
 
+.collection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .collection-header h1 {
   display: flex;
   align-items: center;
@@ -1206,6 +1213,323 @@ button {
 
 .topic-picker .effect-picker {
   margin-bottom: 4px;
+}
+
+/* Coloring book */
+
+.book-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 14px 8px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow:
+    0 3px 0 var(--line),
+    inset 0 0 0 1.5px var(--line);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.book-btn svg {
+  color: var(--violet);
+}
+
+.book-btn-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 380px) {
+  .book-btn > span:not(.book-btn-count) {
+    display: none;
+  }
+}
+
+.book-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--bg-dot) 1.5px, transparent 1.7px);
+  background-size: 22px 22px;
+  animation: rise 0.3s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.book-screen-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: calc(var(--safe-top) + 8px) 16px calc(var(--safe-bottom) + 16px);
+}
+
+.book-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+}
+
+.book-bar h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 18px;
+}
+
+.book-bar-btn {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.beta {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--violet);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.paper-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0 4px;
+}
+
+/* A sheet of A5 paper, 148 × 210. */
+.paper {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: min(58vh, 640px);
+  max-width: 100%;
+  aspect-ratio: 148 / 210;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow:
+    0 1px 2px rgba(40, 20, 60, 0.18),
+    0 14px 34px -10px rgba(40, 20, 60, 0.35);
+}
+
+.paper img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transition: opacity 0.2s;
+}
+
+.paper.working img {
+  opacity: 0.35;
+}
+
+.paper-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 16px;
+  color: #6d6380;
+  font-weight: 700;
+  text-align: center;
+}
+
+.paper-status p {
+  margin: 0;
+}
+
+.paper-size {
+  margin: 10px 0 14px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.book-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.book-actions .btn {
+  flex: 1;
+  max-width: 220px;
+  padding-inline: 14px;
+}
+
+.book-actions .btn-primary {
+  flex: 1.6;
+}
+
+.book-actions-docked {
+  position: sticky;
+  bottom: 0;
+  margin: auto -16px 0;
+  padding: 24px 16px calc(var(--safe-bottom) + 4px);
+  background: linear-gradient(to top, var(--bg) 60%, transparent);
+}
+
+.book-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 420px;
+  margin: 8px auto 18px;
+  padding: 6px 6px 6px 16px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 700;
+  width: 100%;
+}
+
+.book-title input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.book-title input:focus {
+  outline: none;
+  background: color-mix(in srgb, var(--violet) 10%, transparent);
+}
+
+.book-pages {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 20px 16px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+
+.book-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.paper-small {
+  width: 100%;
+  height: auto;
+}
+
+.book-page-label {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.book-page-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.book-page-tools .icon-btn {
+  width: 36px;
+  height: 36px;
+}
+
+.book-page-tools .icon-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.book-page-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow:
+    0 2px 6px rgba(40, 20, 60, 0.2),
+    inset 0 0 0 1.5px var(--line);
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.book-page-remove svg {
+  width: 18px;
+  height: 18px;
+}
+
+.book-page-remove.confirming {
+  padding: 0 12px;
+  background: var(--danger);
+  color: #fff;
+}
+
+/* Printing: only the pages, one per sheet (see printPages). */
+.print-sheet {
+  display: none;
+}
+
+@media print {
+  html.printing body {
+    background: none;
+  }
+
+  html.printing body > :not(.print-sheet) {
+    display: none !important;
+  }
+
+  html.printing .print-sheet {
+    display: block;
+  }
+
+  .print-sheet img {
+    display: block;
+    width: 148mm;
+    height: 210mm;
+    break-inside: avoid;
+  }
+
+  .print-sheet img:not(:last-child) {
+    break-after: page;
+  }
 }
 
 /* Feedback */
