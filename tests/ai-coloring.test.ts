@@ -4,7 +4,7 @@ import { cleanLineArt } from '../src/lib/line-art'
 
 const settings: AiSettings = {
   engine: 'openai',
-  keys: { openai: ' sk-test ', google: 'AIza-test', fal: 'fal-test' },
+  keys: { openai: ' sk-test ', google: 'AIza-test', fal: 'fal-test', quiver: 'qv-test' },
   models: {},
   quality: 'medium',
 }
@@ -103,6 +103,22 @@ describe('requestAiLineArt', () => {
     expect(body.prompt).toContain('coloring book')
   })
 
+  it('draws vector line art with QuiverAI Arrow 2', async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" stroke="#000" fill="none"/></svg>'
+    const fetch = vi.fn().mockResolvedValue(ok({ id: 'gen_1', data: [{ svg, mime_type: 'image/svg+xml' }], credits: 3 }))
+    vi.stubGlobal('fetch', fetch)
+    const result = await requestAiLineArt(new Blob(['sticker']), '1024x1024', 'detailed', { ...settings, engine: 'quiver' })
+    expect(result.type).toBe('image/svg+xml')
+    expect(await result.text()).toBe(svg)
+    const [url, init] = fetch.mock.calls[0]
+    expect(url).toBe('https://api.quiver.ai/v1/svgs/generations')
+    expect(init.headers.Authorization).toBe('Bearer qv-test')
+    const body = JSON.parse(init.body)
+    expect(body).toMatchObject({ model: 'arrow-2', n: 1, stream: false, references: [{ base64: btoa('sticker') }] })
+    expect(body.prompt).toContain('coloring book page')
+    expect(body.instructions).toContain('older children')
+  })
+
   it('uses a model name typed into the settings', async () => {
     const fetch = vi.fn().mockResolvedValue(ok({ candidates: [{ content: { parts: [{ inlineData: { data: btoa('x') } }] } }] }))
     vi.stubGlobal('fetch', fetch)
@@ -199,7 +215,7 @@ describe('loadAiSettings', () => {
     })
     const { loadAiSettings, saveAiSettings } = await import('../src/lib/ai-coloring')
     const loaded = loadAiSettings()
-    expect(loaded).toMatchObject({ engine: 'openai', keys: { openai: 'sk-old', google: '', fal: '' }, quality: 'low' })
+    expect(loaded).toMatchObject({ engine: 'openai', keys: { openai: 'sk-old', google: '', fal: '', quiver: '' }, quality: 'low' })
     saveAiSettings({ ...loaded, engine: 'kontext', keys: { ...loaded.keys, fal: ' fal-key ' } })
     expect(store.has('stickers.ai.key')).toBe(false)
     expect(loadAiSettings()).toMatchObject({ engine: 'kontext', keys: { openai: 'sk-old', fal: 'fal-key' } })

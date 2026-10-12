@@ -460,6 +460,48 @@ test.describe('coloring book', () => {
     await expect(page.getByText('Added to your coloring book!')).toBeVisible()
   })
 
+  test('a vector model draws SVG, rendered sharp at print size', async ({ page }) => {
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        'stickers.ai',
+        JSON.stringify({ engine: 'quiver', keys: { openai: '', google: '', fal: '', quiver: 'qv-test' }, models: {}, quality: 'medium' }),
+      ),
+    )
+    // Like real generated SVG: only a viewBox, no width or height.
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="80" fill="none" stroke="#000" stroke-width="2"/></svg>'
+    let body = ''
+    await page.route('https://api.quiver.ai/v1/svgs/generations', async (route) => {
+      body = route.request().postData() ?? ''
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ svg, mime_type: 'image/svg+xml' }] }) })
+    })
+
+    const studio = await openColoringPage(page)
+    await expect(studio.getByText('Arrow 2 (vector) by QuiverAI')).toBeVisible()
+    await studio.getByRole('button', { name: 'Draw with AI' }).click()
+    const preview = studio.getByTestId('coloring-page')
+    await expect(preview).toHaveAttribute('data-engine', 'ai', { timeout: 20_000 })
+    expect(JSON.parse(body)).toMatchObject({ model: 'arrow-2', n: 1 })
+
+    // The circle fills the drawing area: its left edge sits near the page margin, and the line is
+    // solid black with only a pixel or so of soft edge.
+    const row = await preview.evaluate(async (img: HTMLImageElement) => {
+      await img.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      const { data } = ctx.getImageData(0, 1122, 400, 1)
+      const values = Array.from({ length: 400 }, (_, x) => data[x * 4])
+      return { first: values.findIndex((v) => v < 128), solid: values.filter((v) => v < 10).length, soft: values.filter((v) => v >= 10 && v < 245).length }
+    })
+    expect(row.first).toBeGreaterThan(130)
+    expect(row.first).toBeLessThan(200)
+    expect(row.solid).toBeGreaterThan(8)
+    expect(row.soft).toBeLessThanOrEqual(4)
+  })
+
   test('turn a sticker into an A5 coloring page for free, add it to the book, and export the book', async ({ page }) => {
     const studio = await openColoringPage(page)
     await studio.getByRole('radio', { name: 'Free' }).click()

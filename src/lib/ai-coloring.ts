@@ -1,10 +1,10 @@
 // Coloring pages drawn by an AI image model: the sticker goes in, clean line art comes out.
-// Several models from three providers are offered, since each refuses or struggles with
+// Several models from four providers are offered, since each refuses or struggles with
 // different pictures. They use the person's own API keys, kept on their device.
 
 import type { ColoringDetail } from './coloring'
 
-export type AiProvider = 'openai' | 'google' | 'fal'
+export type AiProvider = 'openai' | 'google' | 'fal' | 'quiver'
 export type AiQuality = 'low' | 'medium' | 'high'
 export const AI_QUALITIES: AiQuality[] = ['low', 'medium', 'high']
 
@@ -27,6 +27,12 @@ export const PROVIDERS: Record<AiProvider, { name: string; keyUrl: string; keyHi
     keyHint: 'key-id:secret',
     note: 'One key covers all the fal.ai models. Add some credit to the account first.',
   },
+  quiver: {
+    name: 'QuiverAI',
+    keyUrl: 'https://quiver.ai',
+    keyHint: 'Your QuiverAI API key',
+    note: 'Sign in, then create a key under API keys. Arrow 2 is priced by how much drawing it produces.',
+  },
 }
 
 export interface AiEngine {
@@ -44,6 +50,7 @@ export const AI_ENGINES: AiEngine[] = [
   { id: 'kontext', provider: 'fal', name: 'FLUX Kontext Pro', blurb: 'Black Forest Labs, on fal.ai. Strong at turning pictures into line art.', model: 'fal-ai/flux-pro/kontext' },
   { id: 'seedream', provider: 'fal', name: 'Seedream 4', blurb: 'ByteDance, on fal.ai. Cheap and detailed.', model: 'fal-ai/bytedance/seedream/v4/edit' },
   { id: 'qwen', provider: 'fal', name: 'Qwen Image Edit', blurb: 'Alibaba, on fal.ai. Cheap; good at keeping shapes.', model: 'fal-ai/qwen-image-edit' },
+  { id: 'quiver', provider: 'quiver', name: 'Arrow 2 (vector)', blurb: 'QuiverAI. Draws real vector lines, perfectly sharp at any size.', model: 'arrow-2' },
 ]
 
 export const engineById = (id: string) => AI_ENGINES.find((e) => e.id === id) ?? AI_ENGINES[0]
@@ -81,7 +88,7 @@ export function loadAiSettings(): AiSettings {
       return null
     }
   }
-  const defaults: AiSettings = { engine: 'openai', keys: { openai: '', google: '', fal: '' }, models: {}, quality: 'medium' }
+  const defaults: AiSettings = { engine: 'openai', keys: { openai: '', google: '', fal: '', quiver: '' }, models: {}, quality: 'medium' }
   try {
     const stored = JSON.parse(read(STORE) ?? 'null') as Partial<AiSettings> | null
     if (stored) {
@@ -108,11 +115,7 @@ export function loadAiSettings(): AiSettings {
 export function saveAiSettings(settings: AiSettings) {
   const clean: AiSettings = {
     ...settings,
-    keys: {
-      openai: settings.keys.openai.trim(),
-      google: settings.keys.google.trim(),
-      fal: settings.keys.fal.trim(),
-    },
+    keys: Object.fromEntries(Object.entries(settings.keys).map(([p, k]) => [p, k.trim()])) as AiSettings['keys'],
     models: Object.fromEntries(Object.entries(settings.models).filter(([, m]) => m.trim()).map(([id, m]) => [id, m.trim()])),
   }
   try {
@@ -342,15 +345,47 @@ async function drawWithFal(job: Job): Promise<Blob> {
   }
 }
 
+/**
+ * QuiverAI's Arrow draws SVG from a description, with the sticker as a reference picture, so the
+ * result is true vector line art. Returns the SVG, which is rendered at print size later.
+ */
+async function drawWithQuiver(job: Job): Promise<Blob> {
+  const response = await post(
+    'quiver',
+    'https://api.quiver.ai/v1/svgs/generations',
+    {
+      headers: { Authorization: `Bearer ${job.key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: job.model,
+        prompt: 'A black-and-white coloring book page of exactly what is in the reference picture: the same characters, pose and composition, drawn as clean outlines.',
+        instructions: `${job.prompt} Use black strokes only, with no fills except tiny solid black details like pupils.`,
+        references: [{ base64: await blobToBase64(job.image) }],
+        n: 1,
+        stream: false,
+      }),
+    },
+    job.signal,
+  )
+  const body = await readJson<{ data?: { svg?: string }[]; error?: { message?: string } | string; message?: string }>(response)
+  if (!response.ok) {
+    const message = typeof body?.error === 'string' ? body.error : (body?.error?.message ?? body?.message ?? '')
+    throw describeAiError('quiver', response.status, message)
+  }
+  const svg = body?.data?.[0]?.svg
+  if (!svg || !svg.includes('<svg')) throw new AiError('QuiverAI sent back no drawing. Try again.')
+  return new Blob([svg], { type: 'image/svg+xml' })
+}
+
 const DRAW: Record<AiProvider, (job: Job) => Promise<Blob>> = {
   openai: drawWithOpenAi,
   google: drawWithGemini,
   fal: drawWithFal,
+  quiver: drawWithQuiver,
 }
 
 /**
  * Asks the chosen model to redraw `image` (the sticker on white, already shaped like `size`) as a
- * coloring page. Returns the drawing as an image.
+ * coloring page. Returns the drawing as an image (SVG from vector models).
  */
 export function requestAiLineArt(
   image: Blob,
