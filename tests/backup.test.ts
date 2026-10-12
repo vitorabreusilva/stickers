@@ -35,6 +35,7 @@ describe('backup', () => {
       book: [
         {
           id: 'p',
+          bookId: 'b1',
           stickerId: 'a',
           sticker: png(9),
           page: png(8, 7),
@@ -43,6 +44,7 @@ describe('backup', () => {
           createdAt: 6,
         },
       ],
+      books: [{ id: 'b1', title: 'Rex & friends', background: 'mint', layout: 'tidy', createdAt: 6 }],
       bookTitle: 'Rex & friends',
     })
     expect(file.type).toBe('application/json')
@@ -63,12 +65,21 @@ describe('backup', () => {
     expect(await bytesOf(back.book[0].page)).toEqual([8, 7])
     expect(await bytesOf(back.book[0].sticker)).toEqual([9])
     expect(back.book[0].detail).toBe('medium')
+    expect(back.book[0].bookId).toBe('b1')
+    expect(back.books).toEqual([{ id: 'b1', title: 'Rex & friends', background: 'mint', layout: 'tidy', createdAt: 6 }])
     expect(back.bookTitle).toBe('Rex & friends')
   })
 
   it('handles an empty collection', async () => {
-    const back = await readBackup(await createBackup({ stickers: [], folders: [], book: [], bookTitle: null }))
-    expect(back).toEqual({ stickers: [], folders: [], book: [], bookTitle: null })
+    const back = await readBackup(await createBackup({ stickers: [], folders: [], book: [], books: [], bookTitle: null }))
+    expect(back).toEqual({ stickers: [], folders: [], book: [], books: [], bookTitle: null })
+  })
+
+  it('reads backups from before there could be several books', async () => {
+    const old = { format: 'stickers-backup', version: 1, exportedAt: '', stickers: [], folders: [], book: [], bookTitle: 'Old' }
+    const back = await readBackup(new Blob([JSON.stringify(old)]))
+    expect(back.books).toEqual([])
+    expect(back.bookTitle).toBe('Old')
   })
 
   it('rejects files that are not backups', async () => {

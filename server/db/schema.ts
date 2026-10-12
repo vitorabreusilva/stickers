@@ -120,6 +120,8 @@ export const bookPages = pgTable(
     id: text('id').notNull(),
     rev: rev(),
     deleted: boolean('deleted').notNull().default(false),
+    /** Pages from before there could be several books are in the book called 'default'. */
+    bookId: text('book_id').notNull().default('default'),
     stickerId: text('sticker_id').notNull().default(''),
     effect: text('effect'),
     detail: text('detail').notNull().default('medium'),
@@ -127,6 +129,21 @@ export const bookPages = pgTable(
     createdAt: bigint('created_at', { mode: 'number' }).notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.userId, t.id] }), index('book_pages_rev_idx').on(t.userId, t.rev)],
+)
+
+export const books = pgTable(
+  'books',
+  {
+    userId: owner(),
+    id: text('id').notNull(),
+    rev: rev(),
+    deleted: boolean('deleted').notNull().default(false),
+    title: text('title').notNull().default(''),
+    background: text('background').notNull().default('cream'),
+    layout: text('layout').notNull().default('playful'),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.id] }), index('books_rev_idx').on(t.userId, t.rev)],
 )
 
 export const settings = pgTable('settings', {

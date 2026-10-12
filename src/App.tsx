@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BackupSheet } from './components/BackupSheet'
+import { BookPreview } from './components/BookPreview'
 import { BookView } from './components/BookView'
 import { Collection } from './components/Collection'
 import { ColoringStudio } from './components/ColoringStudio'
@@ -19,7 +20,7 @@ import type { StickerImage } from './lib/sticker'
 import { assignTopics, groupByTopic } from './lib/topics'
 import { useAccount } from './hooks/useAccount'
 import { useAutoAnalysis } from './hooks/useAutoAnalysis'
-import { useColoringBook } from './hooks/useColoringBook'
+import { useColoringBooks } from './hooks/useColoringBooks'
 import { useFolderColors } from './hooks/useFolderColors'
 import { useNavStack } from './hooks/useNavStack'
 import { useStickers } from './hooks/useStickers'
@@ -31,12 +32,13 @@ type Screen =
   | { kind: 'detail'; id: string }
   | { kind: 'folder'; key: FolderKey }
   | { kind: 'coloring'; id: string }
-  | { kind: 'book' }
+  | { kind: 'book'; id: string }
+  | { kind: 'book-preview'; id: string; side: number }
 
 export function App() {
   const { stack, push, back, home } = useNavStack<Screen>()
   const { stickers, add, remove, update } = useStickers()
-  const book = useColoringBook()
+  const books = useColoringBooks()
   // Sort stickers into topics in the background, and regroup whenever anything changes.
   const sorting = useAutoAnalysis(stickers, update)
   const topics = useMemo(() => assignTopics(stickers ?? []), [stickers])
@@ -137,8 +139,14 @@ export function App() {
         onPaste={pasteFromClipboard}
         onOpen={(id) => push({ kind: 'detail', id })}
         onOpenFolder={(key) => push({ kind: 'folder', key })}
-        bookPages={book.pages?.length ?? null}
-        onOpenBook={() => push({ kind: 'book' })}
+        books={books.books}
+        onOpenBook={(id) => push({ kind: 'book', id })}
+        onNewBook={() =>
+          books
+            .create()
+            .then(({ id }) => push({ kind: 'book', id }))
+            .catch(() => showToast("Couldn't make a new book"))
+        }
         onOpenBackup={() => setBackupOpen(true)}
         onSignIn={
           account.status === 'signed-out'
@@ -207,24 +215,41 @@ export function App() {
               <ColoringStudio
                 key={i}
                 sticker={sticker}
-                onAdd={book.add}
-                onOpenBook={() => push({ kind: 'book' })}
+                books={books.books}
+                onAdd={books.addPage}
+                onCreateBook={() => books.create()}
+                onOpenBook={(id) => push({ kind: 'book', id })}
                 onClose={back}
                 toast={showToast}
               />
             )
           }
-          case 'book':
+          case 'book': {
+            const book = books.books?.find((b) => b.id === screen.id)
+            if (!book) return null
             return (
               <BookView
-                key={i}
-                pages={book.pages ?? []}
-                onRemove={book.remove}
-                onMove={book.move}
+                key={`${i}-${book.id}`}
+                book={book}
+                onUpdate={(patch) => books.update(book.id, patch)}
+                onDelete={async () => {
+                  await books.remove(book.id)
+                  back()
+                  showToast(`Deleted ${book.title}`)
+                }}
+                onRemovePage={books.removePage}
+                onMovePage={books.movePage}
+                onPreview={(side) => push({ kind: 'book-preview', id: book.id, side })}
                 onClose={back}
                 toast={showToast}
               />
             )
+          }
+          case 'book-preview': {
+            const book = books.books?.find((b) => b.id === screen.id)
+            if (!book) return null
+            return <BookPreview key={i} book={book} start={screen.side} onClose={back} />
+          }
         }
       })}
 

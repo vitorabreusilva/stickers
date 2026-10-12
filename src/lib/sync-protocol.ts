@@ -28,9 +28,20 @@ export interface SyncFolder {
   color: string
 }
 
+export interface SyncBook {
+  id: string
+  deleted?: boolean
+  title: string
+  background: string
+  layout: string
+  createdAt: number
+}
+
 export interface SyncBookPage {
   id: string
   deleted?: boolean
+  /** Missing from devices that haven't updated; those pages are in the first book. */
+  bookId?: string
   stickerId: string
   effect?: string | null
   detail: string
@@ -47,6 +58,7 @@ export interface SyncPush {
   stickers?: SyncSticker[]
   folders?: SyncFolder[]
   book?: SyncBookPage[]
+  books?: SyncBook[]
   settings?: SyncSettings
 }
 
@@ -59,6 +71,7 @@ export interface SyncPull {
   stickers: SyncSticker[]
   folders: SyncFolder[]
   book: SyncBookPage[]
+  books: SyncBook[]
   settings?: SyncSettings
 }
 

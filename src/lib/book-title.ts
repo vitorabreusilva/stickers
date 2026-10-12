@@ -1,9 +1,10 @@
-// The coloring book's title lives in localStorage; it's one short string and needs no database.
+// The title of the first coloring book, from before there could be several, lives in localStorage.
+// Books have their own record now (see BookRecord); this title still names that first book until
+// it's edited, and keeps syncing for devices that haven't updated.
 
 import { bookTitleChanged } from './db'
 
 const TITLE_KEY = 'stickers.bookTitle'
-export const DEFAULT_TITLE = 'My Coloring Book'
 
 /** The title the user typed, or null if they never changed it. */
 export function storedBookTitle(): string | null {

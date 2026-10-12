@@ -1,8 +1,9 @@
 import { base64ToBytes, bytesToBase64, decodeAnalysis, encodeAnalysis, type EncodedAnalysis } from './codec'
-import type { BookPageRecord, FolderRecord, StickerRecord } from './db'
+import { DEFAULT_STYLE, isCoverBackground, isCoverLayout } from './books'
+import type { BookPageRecord, BookRecord, FolderRecord, StickerRecord } from './db'
 
 /**
- * A whole collection in one JSON file: stickers, folder colours and the coloring book, with every
+ * A whole collection in one JSON file: stickers, folder colours and the coloring books, with every
  * picture inlined as base64. Meant for moving a collection between devices or into an account, so
  * it favours being one plain file over being small.
  */
@@ -10,7 +11,8 @@ export interface BackupContents {
   stickers: StickerRecord[]
   folders: FolderRecord[]
   book: BookPageRecord[]
-  /** The coloring book's title, kept in localStorage rather than IndexedDB. */
+  books: BookRecord[]
+  /** The first coloring book's title, from before books had their own records (see book-title). */
   bookTitle: string | null
 }
 
@@ -31,6 +33,8 @@ interface BackupFile {
   stickers: Encoded<StickerRecord>[]
   folders: FolderRecord[]
   book: Encoded<BookPageRecord>[]
+  /** Missing from backups made before there could be several books. */
+  books?: BookRecord[]
   bookTitle: string | null
 }
 
@@ -57,6 +61,7 @@ export async function createBackup(contents: BackupContents, now = new Date()): 
     version: BACKUP_VERSION,
     exportedAt: now.toISOString(),
     folders: contents.folders,
+    books: contents.books,
     bookTitle: contents.bookTitle,
   }
   parts.push(JSON.stringify(head).slice(0, -1), ',"stickers":[')
@@ -106,10 +111,24 @@ export async function readBackup(file: Blob): Promise<BackupContents> {
       page: decodeBlob(p.page, 'a coloring page'),
     } as BookPageRecord
   })
+  const books = (data.books ?? []).flatMap((b): BookRecord[] =>
+    typeof b?.id === 'string'
+      ? [
+          {
+            id: b.id,
+            title: typeof b.title === 'string' ? b.title : '',
+            background: isCoverBackground(b.background) ? b.background : DEFAULT_STYLE.background,
+            layout: isCoverLayout(b.layout) ? b.layout : DEFAULT_STYLE.layout,
+            createdAt: typeof b.createdAt === 'number' ? b.createdAt : 0,
+          },
+        ]
+      : [],
+  )
   return {
     stickers,
     folders: (data.folders ?? []).filter((f) => typeof f?.key === 'string'),
     book,
+    books,
     bookTitle: typeof data.bookTitle === 'string' ? data.bookTitle : null,
   }
 }
