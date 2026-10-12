@@ -40,13 +40,6 @@ export const ExpandIcon = () => (
   </Icon>
 )
 
-/** A cloud, for a signed-in, syncing collection. */
-export const CloudIcon = () => (
-  <Icon>
-    <path d="M7 18.5h10.5a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.5 9.6 4.5 4.5 0 0 0 7 18.5z" />
-  </Icon>
-)
-
 /** Google's "G", in its colours, for the sign-in button. */
 export const GoogleIcon = () => (
   <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true">
@@ -57,12 +50,11 @@ export const GoogleIcon = () => (
   </svg>
 )
 
-/** A box with an arrow, for backing up and restoring the collection. */
-export const BackupIcon = () => (
+/** A cog, for settings: account, sync and backup. */
+export const SettingsIcon = () => (
   <Icon>
-    <path d="M4 8.5h16v10a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5z" />
-    <path d="M3 4.5h18v4H3z" />
-    <path d="M12 11.5v6M9.5 15l2.5 2.5 2.5-2.5" />
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
   </Icon>
 )
 

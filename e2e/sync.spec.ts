@@ -64,13 +64,13 @@ test('a collection follows you to another device, both ways', async ({ browser }
     ctx.fillRect(0, 0, 300, 200)
     return Array.from(new Uint8Array(await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer()))
   })
-  await phone.getByRole('button', { name: 'Sync and backup' }).click()
-  const phoneSheet = phone.getByRole('dialog', { name: 'Sync and backup' })
+  await phone.getByRole('button', { name: 'Settings' }).click()
+  const phoneSheet = phone.getByRole('dialog', { name: 'Settings' })
   await expect(phoneSheet.getByText(E2E_EMAIL)).toBeVisible()
   await phoneSheet.getByRole('button', { name: 'Close' }).click()
 
   // Make a sticker the quick way: restore a one-sticker backup.
-  await phone.getByRole('button', { name: 'Sync and backup' }).click()
+  await phone.getByRole('button', { name: 'Settings' }).click()
   const backup = {
     format: 'stickers-backup',
     version: 1,
@@ -88,7 +88,7 @@ test('a collection follows you to another device, both ways', async ({ browser }
   await expect(phone.getByRole('list', { name: 'Folders' }).getByRole('button', { name: 'All stickers, 2 stickers' })).toBeVisible({ timeout: 10_000 })
 
   // Wait for the phone to finish sending.
-  await phone.getByRole('button', { name: 'Sync and backup' }).click()
+  await phone.getByRole('button', { name: 'Settings' }).click()
   await expect(phoneSheet.getByText(/^Synced at /)).toBeVisible({ timeout: 15_000 })
   await phoneSheet.getByRole('button', { name: 'Close' }).click()
 
@@ -109,9 +109,9 @@ test('a collection follows you to another device, both ways', async ({ browser }
   await laptop.getByRole('dialog', { name: 'Food & drinks' }).getByRole('radio', { name: 'Mint' }).click()
   await colour
   await laptop.goBack()
-  const laptopSheet = laptop.getByRole('dialog', { name: 'Sync and backup' })
+  const laptopSheet = laptop.getByRole('dialog', { name: 'Settings' })
 
-  await phone.getByRole('button', { name: 'Sync and backup' }).click()
+  await phone.getByRole('button', { name: 'Settings' }).click()
   const phonePull = pulled(phone)
   await phoneSheet.getByRole('button', { name: 'Sync now' }).click()
   await phonePull
@@ -128,7 +128,7 @@ test('a collection follows you to another device, both ways', async ({ browser }
   await detail.getByRole('button', { name: 'Sure?' }).click()
   await deletion
 
-  await laptop.getByRole('button', { name: 'Sync and backup' }).click()
+  await laptop.getByRole('button', { name: 'Settings' }).click()
   const laptopPull = pulled(laptop)
   await laptopSheet.getByRole('button', { name: 'Sync now' }).click()
   await laptopPull
@@ -136,7 +136,7 @@ test('a collection follows you to another device, both ways', async ({ browser }
   await expect(laptop.getByRole('button', { name: 'Open sticker' })).toHaveCount(1)
 
   // Signing out keeps the stickers on the device.
-  await laptop.getByRole('button', { name: 'Sync and backup' }).click()
+  await laptop.getByRole('button', { name: 'Settings' }).click()
   await laptopSheet.getByRole('button', { name: 'Sign out' }).click()
   await expect(laptopSheet.getByRole('button', { name: 'Sign in with Google' })).toBeVisible()
   await laptopSheet.getByRole('button', { name: 'Close' }).click()

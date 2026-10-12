@@ -89,10 +89,10 @@ export function BackupSheet({ account, sync, onSyncNow, onSignOut, onClose, toas
 
   return (
     <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sheet backup-sheet" role="dialog" aria-modal="true" aria-label="Sync and backup">
+      <div className="sheet backup-sheet" role="dialog" aria-modal="true" aria-label="Settings">
         <header className="sheet-header">
           <span className="icon-btn-spacer" />
-          <h2>{account.status === 'unavailable' ? 'Backup' : 'Sync and backup'}</h2>
+          <h2>Settings</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <CloseIcon />
           </button>

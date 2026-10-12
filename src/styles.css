@@ -1227,6 +1227,51 @@ button {
   color: var(--ink-soft);
 }
 
+.sign-in-banner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 18px;
+  padding: 14px 16px 16px;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow:
+    0 4px 0 var(--line),
+    inset 0 0 0 1.5px var(--line);
+}
+
+.sign-in-banner p {
+  margin: 0 40px 0 0;
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.sign-in-banner .btn {
+  min-height: 46px;
+  background: var(--bg);
+}
+
+.sign-in-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  color: var(--ink-soft);
+}
+
+@media (min-width: 600px) {
+  .sign-in-banner {
+    flex-direction: row;
+    align-items: center;
+    padding-right: 56px;
+  }
+  .sign-in-banner p {
+    flex: 1;
+    margin: 0;
+  }
+}
+
 .backup-sheet {
   gap: 12px;
   overflow-y: auto;

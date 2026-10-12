@@ -11,8 +11,8 @@ A mobile-first PWA for collecting stickers from pictures you find online. Pick a
 - **Collection**: stickers are stored on the device in IndexedDB and work offline. Open one to share it, copy it to the clipboard, download it as a PNG, or delete it.
 - **Grouped by topic**: stickers are sorted automatically into topics such as People, Dogs, Food & drinks and Cartoons & art, using small on-device models. Nothing leaves the phone. Tap a topic chip to filter, or move a sticker to another topic by hand from its detail view.
 - **Coloring book** *(beta)*: open a sticker and tap *Color* to turn it into line art on an A5 page (148 × 210 mm), ready to print and colour in with pencils. **✨ AI** has an image model redraw the sticker as clean, professional line art: OpenAI GPT Image, Google Nano Banana 2, FLUX Kontext Pro, Seedream 4 and Qwen Image Edit on fal.ai, or QuiverAI's Arrow 2, which draws true vector (SVG) line art. It uses your own API keys (set them in *AI settings*; they're stored only on your device, and you pay the provider per page). When a model declines a sticker, the page offers the others you've set up. **Free** traces the lines on the device, offline. Pick Simple, Medium or Detailed, and optionally put the original sticker in the corner as a colour guide. Print the page or save it as a PDF, or add it to your coloring book. The book gets a cover made from all the stickers you used, with a title you choose, and prints or saves as one PDF.
-- **Sync across devices**: sign in with Google (invited emails only) and the collection, folder colours and coloring book follow you to every device. It's local-first: everything is saved on the device and works offline or signed out, and changes sync in the background when there's a connection.
-- **Backup**: the *Sync and backup* sheet also saves the whole collection (stickers, folder colours, coloring book) to one JSON file, and restores one. Restoring adds to what's there and never deletes. AI keys aren't included.
+- **Sync across devices**: sign in with Google (invited emails only) from the banner on first open or from *Settings* and the collection, folder colours and coloring book follow you to every device. It's local-first: everything is saved on the device and works offline or signed out, and changes sync in the background when there's a connection.
+- **Backup**: *Settings* (the cog on the home screen) also saves the whole collection (stickers, folder colours, coloring book) to one JSON file, and restores one. Restoring adds to what's there and never deletes. AI keys aren't included.
 - **Private**: cutting out, sorting and line tracing run on the device. When you sign in, stickers are stored in your account (a private Blob store, readable only through your signed-in session). AI keys stay on the device and never sync.
 
 ## Development
@@ -68,7 +68,7 @@ One-time setup:
 
 Sign-in works on the production domain. Preview deployments get their own URLs that Google doesn't know, so sign in there only if you add them to the OAuth client.
 
-**Moving from the GitHub Pages version**: the browser keeps each site's data separately, so the collection on `github.io` doesn't appear on the new domain by itself. On the old app, open *Backup* and download a backup. On the new one, sign in, then *Restore from a backup*, and it syncs to your account.
+**Moving from the GitHub Pages version**: the browser keeps each site's data separately, so the collection on `github.io` doesn't appear on the new domain by itself. On the old app, tap the box icon and download a backup. On the new one, sign in, then *Restore from a backup*, and it syncs to your account.
 
 ## How it works
 
