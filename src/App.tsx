@@ -3,6 +3,7 @@ import { Collection } from './components/Collection'
 import { LassoEditor } from './components/LassoEditor'
 import { StickerDetail } from './components/StickerDetail'
 import { StickerPreview } from './components/StickerPreview'
+import { cutoutPreferred, preloadCutout } from './lib/cutout'
 import { newId, requestPersistentStorage } from './lib/db'
 import { canReadClipboard, firstImageFile, readClipboardImage, takeSharedImage } from './lib/device'
 import type { Point } from './lib/geometry'
@@ -29,6 +30,8 @@ export function App() {
       setBusy(true)
       try {
         push({ kind: 'editor', image: await loadImage(blob) })
+        // Download the cutout model while the user draws.
+        if (cutoutPreferred()) preloadCutout()
       } catch {
         showToast("Couldn't open that picture. Try a JPG, PNG or WebP.")
       } finally {

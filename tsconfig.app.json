@@ -15,5 +15,5 @@
     "noEmit": true
   },
   "include": ["src", "tests"],
-  "exclude": ["src/sw.ts"]
+  "exclude": ["src/sw.ts", "src/cutout.worker.ts"]
 }

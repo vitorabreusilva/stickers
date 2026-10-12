@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundingBox, decimate, finishLasso, intersectRect, polygonArea, smoothClosed } from '../src/lib/geometry'
+import { boundingBox, decimate, finishLasso, intersectRect, polygonArea, polygonCentroid, smoothClosed } from '../src/lib/geometry'
 
 const square = [
   { x: 0, y: 0 },
@@ -12,6 +12,15 @@ describe('geometry', () => {
   it('computes polygon area regardless of winding', () => {
     expect(polygonArea(square)).toBe(100)
     expect(polygonArea([...square].reverse())).toBe(100)
+  })
+
+  it('finds the center of area, not the average vertex', () => {
+    expect(polygonCentroid(square)).toEqual({ x: 5, y: 5 })
+    // Extra vertices bunched on one edge don't drag the centroid.
+    const bunched = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }, ...square.slice(1)]
+    const c = polygonCentroid(bunched)
+    expect(c.x).toBeCloseTo(5)
+    expect(c.y).toBeCloseTo(5)
   })
 
   it('drops points that are too close together', () => {

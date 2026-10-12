@@ -49,6 +49,26 @@ export function polygonArea(points: Point[]): number {
   return Math.abs(sum) / 2
 }
 
+/** Area centroid of a closed polygon; falls back to the vertex average for degenerate ones. */
+export function polygonCentroid(points: Point[]): Point {
+  let area = 0
+  let cx = 0
+  let cy = 0
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]
+    const b = points[(i + 1) % points.length]
+    const cross = a.x * b.y - b.x * a.y
+    area += cross
+    cx += (a.x + b.x) * cross
+    cy += (a.y + b.y) * cross
+  }
+  if (Math.abs(area) < 1e-9) {
+    const n = points.length || 1
+    return { x: points.reduce((s, p) => s + p.x, 0) / n, y: points.reduce((s, p) => s + p.y, 0) / n }
+  }
+  return { x: cx / (3 * area), y: cy / (3 * area) }
+}
+
 export function boundingBox(points: Point[]): Rect {
   let minX = Infinity
   let minY = Infinity

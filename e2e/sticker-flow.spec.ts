@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
+const SKY = [0x7c, 0xc6, 0xff]
+
 /** A sky-blue picture with a yellow sun in the middle, as PNG bytes. */
 async function makePicture(page: Page) {
   const dataUrl = await page.evaluate(() => {
@@ -7,7 +9,7 @@ async function makePicture(page: Page) {
     canvas.width = 800
     canvas.height = 600
     const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#7cc6ff'
+    ctx.fillStyle = 'rgb(124, 198, 255)'
     ctx.fillRect(0, 0, 800, 600)
     ctx.fillStyle = '#ffd23f'
     ctx.beginPath()
@@ -61,61 +63,112 @@ async function stickerAlpha(page: Page, selector: string) {
   })
 }
 
-test('circle part of a picture, save it, and find it in the collection', async ({ page }) => {
+/** Fraction of a sticker's visible pixels that are sky blue, i.e. background that wasn't removed. */
+async function skyFraction(page: Page) {
+  return page.getByRole('img', { name: 'Sticker preview' }).evaluate(async (img: HTMLImageElement, sky) => {
+    await img.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    const ctx = canvas.getContext('2d')!
+    ctx.drawImage(img, 0, 0)
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    let visible = 0
+    let skyPixels = 0
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 200) continue
+      visible++
+      if (Math.abs(data[i] - sky[0]) + Math.abs(data[i + 1] - sky[1]) + Math.abs(data[i + 2] - sky[2]) < 40) skyPixels++
+    }
+    return skyPixels / visible
+  }, SKY)
+}
+
+test.describe('with background removal off', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('stickers.removeBackground', 'off'))
+  })
+
+  test('circle part of a picture, save it, and find it in the collection', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByText('Your sticker book is empty')).toBeVisible()
+
+    await openPicture(page)
+
+    // A tiny scribble is rejected with a hint.
+    await drawLoop(page, 0.02)
+    await expect(page.getByText('Draw a bigger loop')).toBeVisible()
+
+    await drawLoop(page)
+    await expect(page.getByRole('heading', { name: 'Looks good?' })).toBeVisible()
+    await page.getByRole('button', { name: 'Cut sticker' }).click()
+
+    const preview = page.getByRole('dialog', { name: 'Sticker preview' })
+    await expect(preview.getByRole('img', { name: 'Sticker preview' })).toBeVisible()
+    await preview.getByRole('radio', { name: 'Thin' }).click()
+    await expect(preview.getByRole('radio', { name: 'Thin' })).toHaveAttribute('aria-checked', 'true')
+    await preview.getByRole('button', { name: 'Add to collection' }).click()
+
+    await expect(page.getByText('Added to your collection!')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Open sticker' })).toHaveCount(1)
+
+    // The loop was a circle, so the sticker is opaque in the middle and transparent in the corners.
+    const pixels = await stickerAlpha(page, '.grid-item img')
+    expect(pixels.width).toBeGreaterThanOrEqual(512)
+    expect(pixels.center).toBe(255)
+    expect(pixels.corner).toBe(0)
+
+    // Stickers survive a reload.
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Open sticker' })).toHaveCount(1)
+
+    await page.getByRole('button', { name: 'Open sticker' }).click()
+    const detail = page.getByRole('dialog', { name: 'Sticker' })
+    await detail.getByRole('button', { name: 'Delete' }).click()
+    await detail.getByRole('button', { name: 'Sure?' }).click()
+    await expect(page.getByText('Your sticker book is empty')).toBeVisible()
+  })
+
+  test('whole picture option and the back button', async ({ page }) => {
+    await page.goto('/')
+    await openPicture(page)
+
+    // Browser back closes the editor.
+    await page.goBack()
+    await expect(page.getByRole('heading', { name: 'Circle your sticker' })).toBeHidden()
+
+    await openPicture(page)
+    await page.getByRole('button', { name: 'Use whole picture' }).click()
+    const preview = page.getByRole('dialog', { name: 'Sticker preview' })
+    await expect(preview.getByRole('img', { name: 'Sticker preview' })).toBeVisible()
+
+    // Back from the preview returns to the editor, not the collection.
+    await page.goBack()
+    await expect(preview).toBeHidden()
+    await expect(page.getByRole('heading', { name: 'Circle your sticker' })).toBeVisible()
+  })
+})
+
+test('background removal keeps the subject and drops the background', async ({ page }) => {
+  test.setTimeout(180_000)
   await page.goto('/')
-  await expect(page.getByText('Your sticker book is empty')).toBeVisible()
-
   await openPicture(page)
-
-  // A tiny scribble is rejected with a hint.
-  await drawLoop(page, 0.02)
-  await expect(page.getByText('Draw a bigger loop')).toBeVisible()
-
-  await drawLoop(page)
-  await expect(page.getByRole('heading', { name: 'Looks good?' })).toBeVisible()
+  // A loose loop: plenty of sky around the sun.
+  await drawLoop(page, 0.42)
   await page.getByRole('button', { name: 'Cut sticker' }).click()
 
   const preview = page.getByRole('dialog', { name: 'Sticker preview' })
-  await expect(preview.getByRole('img', { name: 'Sticker preview' })).toBeVisible()
-  await preview.getByRole('radio', { name: 'Thin' }).click()
-  await expect(preview.getByRole('radio', { name: 'Thin' })).toHaveAttribute('aria-checked', 'true')
-  await preview.getByRole('button', { name: 'Add to collection' }).click()
+  const removeBg = preview.getByRole('switch', { name: 'Remove background' })
+  await expect(removeBg).toHaveAttribute('aria-checked', 'true')
+  await expect(preview.getByRole('img', { name: 'Sticker preview' })).toBeVisible({ timeout: 150_000 })
+  expect(await skyFraction(page)).toBeLessThan(0.01)
 
-  await expect(page.getByText('Added to your collection!')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Open sticker' })).toHaveCount(1)
+  // Turning it off gives the plain loop cut, sky and all.
+  await removeBg.click()
+  await expect(removeBg).toHaveAttribute('aria-checked', 'false')
+  await expect.poll(() => skyFraction(page)).toBeGreaterThan(0.2)
 
-  // The loop was a circle, so the sticker is opaque in the middle and transparent in the corners.
-  const pixels = await stickerAlpha(page, '.grid-item img')
-  expect(pixels.width).toBeGreaterThanOrEqual(512)
-  expect(pixels.center).toBe(255)
-  expect(pixels.corner).toBe(0)
-
-  // Stickers survive a reload.
-  await page.reload()
-  await expect(page.getByRole('button', { name: 'Open sticker' })).toHaveCount(1)
-
-  await page.getByRole('button', { name: 'Open sticker' }).click()
-  const detail = page.getByRole('dialog', { name: 'Sticker' })
-  await detail.getByRole('button', { name: 'Delete' }).click()
-  await detail.getByRole('button', { name: 'Sure?' }).click()
-  await expect(page.getByText('Your sticker book is empty')).toBeVisible()
-})
-
-test('whole picture option and the back button', async ({ page }) => {
-  await page.goto('/')
-  await openPicture(page)
-
-  // Browser back closes the editor.
-  await page.goBack()
-  await expect(page.getByRole('heading', { name: 'Circle your sticker' })).toBeHidden()
-
-  await openPicture(page)
-  await page.getByRole('button', { name: 'Use whole picture' }).click()
-  const preview = page.getByRole('dialog', { name: 'Sticker preview' })
-  await expect(preview.getByRole('img', { name: 'Sticker preview' })).toBeVisible()
-
-  // Back from the preview returns to the editor, not the collection.
-  await page.goBack()
-  await expect(preview).toBeHidden()
-  await expect(page.getByRole('heading', { name: 'Circle your sticker' })).toBeVisible()
+  // Turning it back on reuses the earlier result instead of running the model again.
+  await removeBg.click()
+  await expect.poll(() => skyFraction(page), { timeout: 5_000 }).toBeLessThan(0.01)
 })

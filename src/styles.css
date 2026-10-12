@@ -405,7 +405,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: min(46vh, 420px);
+  height: min(40vh, 400px);
   padding: 16px;
 }
 
@@ -415,6 +415,132 @@ button {
   object-fit: contain;
   filter: var(--sticker-shadow);
   animation: peel 0.55s cubic-bezier(0.2, 1.4, 0.5, 1) both;
+}
+
+.preview-note {
+  min-height: 1.4em;
+  margin: -4px 8px 6px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.preview-options {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 340px;
+  padding: 10px 12px 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  font-size: 15px;
+  font-weight: 750;
+  text-align: left;
+}
+
+.switch-row svg {
+  color: var(--violet);
+}
+
+.switch-row > span:first-of-type {
+  flex: 1;
+}
+
+.switch {
+  position: relative;
+  width: 46px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background 0.2s;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s cubic-bezier(0.3, 1.4, 0.6, 1);
+}
+
+.switch-row[aria-checked='true'] .switch {
+  background: var(--violet);
+}
+
+.switch-row[aria-checked='true'] .switch::after {
+  transform: translateX(18px);
+}
+
+.cutout-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(100%, 280px);
+  text-align: center;
+}
+
+.cutout-progress p {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  font-weight: 750;
+}
+
+.cutout-progress small {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.progress {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--violet));
+  transition: width 0.3s;
+}
+
+.scissors-spin {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--violet);
+  animation: twinkle 1.4s ease-in-out infinite;
+}
+
+.scissors-spin svg {
+  width: 30px;
+  height: 30px;
 }
 
 .preview-error {
@@ -427,7 +553,6 @@ button {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin: 4px auto 16px;
   padding: 5px;
   border-radius: 999px;
   background: var(--surface);
@@ -655,6 +780,12 @@ button {
   }
   75% {
     transform: translateX(6px);
+  }
+}
+
+@keyframes twinkle {
+  50% {
+    transform: scale(1.12) rotate(18deg);
   }
 }
 

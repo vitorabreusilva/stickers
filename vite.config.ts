@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { statSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -6,8 +7,23 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Set BASE_PATH when hosting under a sub-path, e.g. BASE_PATH=/stickers/ for GitHub Pages.
 const base = process.env.BASE_PATH ?? '/'
 
+// Background-removal model, downloaded into public/ by scripts/fetch-model.mjs (keep the name in sync).
+const CUTOUT_MODEL = 'models/magic-touch-v2-int8-1.task'
+const CUTOUT_WASM = 'node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_internal.wasm'
+const fileSize = (path: string) => {
+  try {
+    return statSync(path).size
+  } catch {
+    return 0
+  }
+}
+
 export default defineConfig({
   base,
+  define: {
+    __CUTOUT_MODEL__: JSON.stringify(CUTOUT_MODEL),
+    __CUTOUT_BYTES__: fileSize(`public/${CUTOUT_MODEL}`) + fileSize(CUTOUT_WASM),
+  },
   plugins: [
     react(),
     VitePWA({

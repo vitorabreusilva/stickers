@@ -1,4 +1,5 @@
-import { boundingBox, intersectRect, type Point } from './geometry'
+import type { SubjectMask } from './cutout'
+import { boundingBox, intersectRect, type Point, type Rect } from './geometry'
 import { canvasToBlob, createCanvas, type LoadedImage } from './image'
 import { addOutline, opaqueBounds } from './outline'
 
@@ -25,9 +26,45 @@ export function traceLoop(ctx: CanvasRenderingContext2D, points: Point[]) {
   ctx.closePath()
 }
 
-/** Cuts `loop` (in image pixels) out of the image and gives it a white die-cut border. */
-export async function createSticker(image: LoadedImage, loop: Point[], outline: OutlineSize): Promise<StickerImage> {
-  const crop = intersectRect(boundingBox(loop), { x: 0, y: 0, width: image.width, height: image.height })
+/** Where the subject is, in image pixels, with a pixel of slack for the mask's soft edge. */
+function subjectBounds(subject: SubjectMask): Rect {
+  const sx = subject.rect.width / subject.width
+  const sy = subject.rect.height / subject.height
+  return {
+    x: subject.rect.x + (subject.bounds.x - 1) * sx,
+    y: subject.rect.y + (subject.bounds.y - 1) * sy,
+    width: (subject.bounds.width + 2) * sx,
+    height: (subject.bounds.height + 2) * sy,
+  }
+}
+
+const maskCanvases = new WeakMap<SubjectMask, HTMLCanvasElement>()
+
+/** The mask as a canvas whose alpha channel is the subject's opacity. */
+function maskCanvas(subject: SubjectMask): HTMLCanvasElement {
+  let canvas = maskCanvases.get(subject)
+  if (!canvas) {
+    canvas = createCanvas(subject.width, subject.height)
+    const pixels = new ImageData(subject.width, subject.height)
+    for (let i = 0; i < subject.alpha.length; i++) pixels.data[i * 4 + 3] = Math.round(subject.alpha[i] * 255)
+    canvas.getContext('2d')!.putImageData(pixels, 0, 0)
+    maskCanvases.set(subject, canvas)
+  }
+  return canvas
+}
+
+/**
+ * Cuts a sticker out of the image and gives it a white die-cut border. With a `subject` mask the
+ * sticker is the subject alone; otherwise it's everything inside `loop` (in image pixels).
+ */
+export async function createSticker(
+  image: LoadedImage,
+  loop: Point[],
+  outline: OutlineSize,
+  subject?: SubjectMask,
+): Promise<StickerImage> {
+  const region = subject ? subjectBounds(subject) : boundingBox(loop)
+  const crop = intersectRect(region, { x: 0, y: 0, width: image.width, height: image.height })
   if (crop.width < 1 || crop.height < 1) throw new Error('That loop is outside the picture')
 
   const longest = Math.max(crop.width, crop.height)
@@ -44,10 +81,21 @@ export async function createSticker(image: LoadedImage, loop: Point[], outline: 
   ctx.translate(pad, pad)
   ctx.scale(scale, scale)
   ctx.translate(-crop.x, -crop.y)
-  ctx.beginPath()
-  traceLoop(ctx, loop)
-  ctx.clip('evenodd')
-  ctx.drawImage(image.source, 0, 0, image.width, image.height)
+  if (subject) {
+    const { x, y, width: w, height: h } = subject.rect
+    ctx.beginPath()
+    ctx.rect(x, y, w, h)
+    ctx.clip()
+    ctx.drawImage(image.source, 0, 0, image.width, image.height)
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.drawImage(maskCanvas(subject), x, y, w, h)
+    ctx.globalCompositeOperation = 'source-over'
+  } else {
+    ctx.beginPath()
+    traceLoop(ctx, loop)
+    ctx.clip('evenodd')
+    ctx.drawImage(image.source, 0, 0, image.width, image.height)
+  }
 
   const pixels = ctx.getImageData(0, 0, work.width, work.height)
   const stickered = addOutline(pixels.data, work.width, work.height, radius)
