@@ -339,3 +339,90 @@ test('stickers from before folders show up in folders that fan out, open and cha
   const all = page.getByRole('dialog', { name: 'All stickers' })
   await expect(all.getByRole('button', { name: 'Open sticker' })).toHaveCount(4)
 })
+
+test.describe('coloring book', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('stickers.removeBackground', 'off'))
+  })
+
+  test('turn a sticker into an A5 coloring page, add it to the book, and export the book', async ({ page }) => {
+    await page.goto('/')
+    await openPicture(page)
+    await drawLoop(page)
+    await page.getByRole('button', { name: 'Cut sticker' }).click()
+    await page.getByRole('dialog', { name: 'Sticker preview' }).getByRole('button', { name: 'Add to collection' }).click()
+    await expect(page.getByText('Added to your collection!')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Open sticker' }).click()
+    await page.getByRole('dialog', { name: 'Sticker' }).getByRole('button', { name: 'Color' }).click()
+
+    const studio = page.getByRole('dialog', { name: 'Coloring page' })
+    const preview = studio.getByTestId('coloring-page')
+    await expect(studio.getByRole('button', { name: 'Add to book' })).toBeEnabled({ timeout: 20_000 })
+
+    // The page is A5 at 300 dpi: white paper with black lines around the sun.
+    const sheet = await preview.evaluate(async (img: HTMLImageElement) => {
+      await img.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      let dark = 0
+      let colored = 0
+      // Leave out the colour guide in the bottom-right corner.
+      for (let y = 0; y < canvas.height * 0.85; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          const i = (y * canvas.width + x) * 4
+          if (data[i] < 80 && data[i + 1] < 80 && data[i + 2] < 80) dark++
+          else if (Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2]) > 40) colored++
+        }
+      }
+      return { width: img.naturalWidth, height: img.naturalHeight, dark: dark / (canvas.width * canvas.height), colored }
+    })
+    expect(sheet.width).toBe(1748)
+    expect(sheet.height).toBe(2480)
+    expect(sheet.dark).toBeGreaterThan(0.002)
+    expect(sheet.dark).toBeLessThan(0.1)
+    expect(sheet.colored).toBe(0)
+
+    await studio.getByRole('radio', { name: 'Simple' }).click()
+    await expect(studio.getByRole('radio', { name: 'Simple' })).toHaveAttribute('aria-checked', 'true')
+    await expect(studio.getByRole('button', { name: 'Add to book' })).toBeEnabled({ timeout: 20_000 })
+
+    const single = page.waitForEvent('download')
+    await studio.getByRole('button', { name: 'PDF' }).click()
+    const singlePdf = await readFile((await (await single).path())!, 'latin1')
+    expect(singlePdf.startsWith('%PDF-1.4')).toBe(true)
+    expect(singlePdf).toContain('/Count 1')
+    expect(singlePdf).toContain('/MediaBox [0 0 419.53 595.28]')
+
+    await studio.getByRole('button', { name: 'Add to book' }).click()
+    await expect(page.getByText('Added to your coloring book!')).toBeVisible()
+    await studio.getByRole('button', { name: 'Open book' }).click()
+
+    const book = page.getByRole('dialog', { name: 'Coloring book' })
+    await expect(book.getByRole('img', { name: 'Page 1' })).toBeVisible()
+    await expect(book.getByTestId('book-cover')).toBeVisible({ timeout: 20_000 })
+    await book.getByLabel('Title').fill('Sunny Days')
+
+    const download = page.waitForEvent('download')
+    await book.getByRole('button', { name: 'Save PDF' }).click()
+    const file = await download
+    expect(file.suggestedFilename()).toBe('sunny-days.pdf')
+    const pdf = await readFile((await file.path())!, 'latin1')
+    // A colour cover (JPEG) and one greyscale page.
+    expect(pdf).toContain('/Count 2')
+    expect(pdf).toContain('/DCTDecode')
+    expect(pdf).toContain('/DeviceGray')
+
+    // The book is kept, and the home screen links to it.
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Coloring book, 1 pages' })).toBeVisible()
+    await page.getByRole('button', { name: 'Coloring book, 1 pages' }).click()
+    await book.getByRole('button', { name: 'Remove page 1' }).click()
+    await book.getByRole('button', { name: 'Really remove page 1?' }).click()
+    await expect(book.getByText('No pages yet')).toBeVisible()
+  })
+})

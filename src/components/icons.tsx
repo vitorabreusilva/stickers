@@ -92,6 +92,40 @@ export const TrashIcon = () => (
   </Icon>
 )
 
+export const CrayonIcon = () => (
+  <Icon>
+    <path d="M14.5 4.5l5 5L9 20H4v-5z" />
+    <path d="M12 7l5 5M4 15l5 5" />
+  </Icon>
+)
+
+export const BookIcon = () => (
+  <Icon>
+    <path d="M12 6.5C10 5 7.5 4.5 4 4.5v14c3.5 0 6 .5 8 2 2-1.5 4.5-2 8-2v-14c-3.5 0-6 .5-8 2z" />
+    <path d="M12 6.5v14" />
+  </Icon>
+)
+
+export const PrintIcon = () => (
+  <Icon>
+    <path d="M7 9V3.5h10V9" />
+    <rect x="3.5" y="9" width="17" height="8" rx="2" />
+    <path d="M7 14h10v6.5H7z" />
+  </Icon>
+)
+
+export const ChevronLeftIcon = () => (
+  <Icon>
+    <path d="M14 7l-5 5 5 5" />
+  </Icon>
+)
+
+export const ChevronRightIcon = () => (
+  <Icon>
+    <path d="M10 7l5 5-5 5" />
+  </Icon>
+)
+
 /** The app mascot, used for the empty collection. */
 export const StarMascot = ({ size = 140 }: { size?: number }) => (
   <svg viewBox="0 0 512 512" width={size} height={size} aria-hidden="true">

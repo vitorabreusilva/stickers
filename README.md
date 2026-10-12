@@ -10,6 +10,7 @@ A mobile-first PWA for collecting stickers from pictures you find online. Pick a
 - **Sticker look**: the cut-out gets an anti-aliased white border (none, thin or thick) that follows its shape, like a real die-cut sticker. Gaps too small to cut are filled; bigger ones stay open.
 - **Collection**: stickers are stored on the device in IndexedDB and work offline. Open one to share it, copy it to the clipboard, download it as a PNG, or delete it.
 - **Grouped by topic**: stickers are sorted automatically into topics such as People, Dogs, Food & drinks and Cartoons & art, using small on-device models. Nothing leaves the phone. Tap a topic chip to filter, or move a sticker to another topic by hand from its detail view.
+- **Coloring book** *(beta)*: open a sticker and tap *Color* to turn it into line art on an A5 page (148 × 210 mm), ready to print and colour in with pencils. Pick Simple, Medium or Detailed, and optionally put the original sticker in the corner as a colour guide. Print the page or save it as a PDF, or add it to your coloring book. The book gets a cover made from all the stickers you used, with a title you choose, and prints or saves as one PDF.
 - **Private and offline**: pictures never leave the device. After the first cutout, the model is cached and background removal works offline too.
 
 ## Development
@@ -58,6 +59,9 @@ The app will be at `https://<user>.github.io/<repo>/`. The workflow reads the ba
 | Topic analysis: classifier, embedder, face detector | `src/workers/analysis.worker.ts`, `src/lib/analysis.ts` |
 | Topics: class-to-topic mapping and grouping | `src/lib/topics.ts`, `src/lib/drawings.ts` |
 | Shared MediaPipe runtime loading and caching | `src/workers/vision-runtime.ts` |
+| Coloring pages: segmentation and line tracing | `src/lib/coloring.ts`, `src/workers/coloring.worker.ts` |
+| A5 pages, cover collage, printing | `src/lib/book-layout.ts`, `src/lib/book-render.ts` |
+| PDF export | `src/lib/pdf.ts` |
 | Storage | `src/lib/db.ts` |
 | Service worker and share target | `src/sw.ts` |
 
@@ -74,6 +78,8 @@ On first use the model and runtime (about 44 MB, or roughly 35 MB over the wire)
 **The sticker** is the refined cut-out, outlined. A Euclidean distance transform on the alpha mask draws a border of exact width. Enclosed gaps are filled only if a circle a third of the border's width can't fit in them. The result is trimmed and saved as a transparent PNG, between 512 and 1024 px on its longest side.
 
 **Topics**: after a sticker is saved, a background worker runs three small MediaPipe models on it: an EfficientNet-Lite2 ImageNet classifier, a MobileNet-V3 embedder and the BlazeFace face detector (about 12 MB, downloaded on first use). Classifier probabilities are summed into about a dozen topics. A confident real face means People, and similarity to a few cartoon drawings the app renders itself counts as Cartoons & art. Stickers that look alike (by embedding) share evidence, so a set of drawings in the same style ends up together. The analysis is stored with the sticker, and topics are recomputed whenever the collection changes. A topic you pick by hand always wins.
+
+**Coloring pages** are made on the device in a Web Worker, in about a second. The sticker is smoothed with edge-preserving diffusion, then split into flat areas: colours are clustered (k-means in Lab), neighbouring areas that look alike or have no visible edge between them are merged (so a shaded gradient stays one area), and crumbs are folded into their neighbours. Lines go where two areas meet. Thin dark strokes the artist drew are kept as ink, while wide dark areas become spaces to colour. The sticker's white die-cut border is left off, and the silhouette gets a thicker outline. Lines are kept as distance fields and drawn at 300 dpi, so they stay smooth and keep the same width in millimetres on paper whatever the sticker's size. PDFs are written by a small built-in writer: greyscale pages compressed with the browser's `CompressionStream`, and a JPEG cover.
 
 ## Platform notes
 

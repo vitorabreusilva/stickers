@@ -6,7 +6,7 @@ import { enableTilt } from '../lib/light'
 import { TOPIC_IDS, TOPICS, type TopicId } from '../lib/topics'
 import type { Sticker } from '../hooks/useStickers'
 import { EffectPicker } from './EffectPicker'
-import { CloseIcon, CopyIcon, DownloadIcon, ShareIcon, TrashIcon } from './icons'
+import { CloseIcon, CopyIcon, CrayonIcon, DownloadIcon, ShareIcon, TrashIcon } from './icons'
 import { StickerArt } from './StickerArt'
 
 interface Props {
@@ -18,12 +18,14 @@ interface Props {
   /** Moves the sticker to a topic, or back to automatic sorting with null. */
   onTopic: (topic: TopicId | null) => Promise<void>
   onEffect: (effect: StickerEffect) => Promise<void>
+  /** Opens the coloring page maker for this sticker. */
+  onColor: () => void
   toast: (message: string) => void
 }
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 
-export function StickerDetail({ sticker, topic, onClose, onDelete, onTopic, onEffect, toast }: Props) {
+export function StickerDetail({ sticker, topic, onClose, onDelete, onTopic, onEffect, onColor, toast }: Props) {
   const [confirming, setConfirming] = useState(false)
   const [picking, setPicking] = useState<'topic' | 'effect' | null>(null)
   const effect = effectOf(sticker.effect)
@@ -114,6 +116,10 @@ export function StickerDetail({ sticker, topic, onClose, onDelete, onTopic, onEf
         <button className="action" onClick={async () => downloadBlob(await exported, filename)}>
           <DownloadIcon />
           <span>Save</span>
+        </button>
+        <button className="action" onClick={onColor}>
+          <CrayonIcon />
+          <span>Color</span>
         </button>
         <button className={`action action-danger${confirming ? ' confirming' : ''}`} onClick={remove}>
           <TrashIcon />

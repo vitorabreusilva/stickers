@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { BookView } from './components/BookView'
 import { Collection } from './components/Collection'
+import { ColoringStudio } from './components/ColoringStudio'
 import { FolderView } from './components/FolderView'
 import { LassoEditor } from './components/LassoEditor'
 import { StickerDetail } from './components/StickerDetail'
@@ -14,6 +16,7 @@ import type { StickerEffect } from './lib/effects'
 import type { StickerImage } from './lib/sticker'
 import { assignTopics, groupByTopic } from './lib/topics'
 import { useAutoAnalysis } from './hooks/useAutoAnalysis'
+import { useColoringBook } from './hooks/useColoringBook'
 import { useFolderColors } from './hooks/useFolderColors'
 import { useNavStack } from './hooks/useNavStack'
 import { useStickers } from './hooks/useStickers'
@@ -24,10 +27,13 @@ type Screen =
   | { kind: 'preview'; image: LoadedImage; loop: Point[] }
   | { kind: 'detail'; id: string }
   | { kind: 'folder'; key: FolderKey }
+  | { kind: 'coloring'; id: string }
+  | { kind: 'book' }
 
 export function App() {
   const { stack, push, back, home } = useNavStack<Screen>()
   const { stickers, add, remove, update } = useStickers()
+  const book = useColoringBook()
   // Sort stickers into topics in the background, and regroup whenever anything changes.
   const sorting = useAutoAnalysis(stickers, update)
   const topics = useMemo(() => assignTopics(stickers ?? []), [stickers])
@@ -116,6 +122,8 @@ export function App() {
         onPaste={pasteFromClipboard}
         onOpen={(id) => push({ kind: 'detail', id })}
         onOpenFolder={(key) => push({ kind: 'folder', key })}
+        bookPages={book.pages?.length ?? null}
+        onOpenBook={() => push({ kind: 'book' })}
       />
 
       {stack.map((screen, i) => {
@@ -163,6 +171,7 @@ export function App() {
                 toast={showToast}
                 onTopic={(topic) => update(sticker.id, { topic: topic ?? undefined })}
                 onEffect={(effect) => update(sticker.id, { effect })}
+                onColor={() => push({ kind: 'coloring', id: sticker.id })}
                 onDelete={async () => {
                   await remove(sticker.id)
                   back()
@@ -170,6 +179,31 @@ export function App() {
               />
             )
           }
+          case 'coloring': {
+            const sticker = stickers?.find((s) => s.id === screen.id)
+            if (!sticker) return null
+            return (
+              <ColoringStudio
+                key={i}
+                sticker={sticker}
+                onAdd={book.add}
+                onOpenBook={() => push({ kind: 'book' })}
+                onClose={back}
+                toast={showToast}
+              />
+            )
+          }
+          case 'book':
+            return (
+              <BookView
+                key={i}
+                pages={book.pages ?? []}
+                onRemove={book.remove}
+                onMove={book.move}
+                onClose={back}
+                toast={showToast}
+              />
+            )
         }
       })}
 
