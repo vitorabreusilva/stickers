@@ -1,3 +1,4 @@
+import { base64ToBytes, bytesToBase64, decodeAnalysis, encodeAnalysis, type EncodedAnalysis } from './codec'
 import type { BookPageRecord, FolderRecord, StickerRecord } from './db'
 
 /**
@@ -21,7 +22,7 @@ interface EncodedBlob {
   base64: string
 }
 
-type Encoded<T> = { [K in keyof T]: T[K] extends Blob ? EncodedBlob : T[K] }
+type Encoded<T> = { [K in keyof T]: T[K] extends Blob ? EncodedBlob : K extends 'analysis' ? EncodedAnalysis : T[K] }
 
 interface BackupFile {
   format: typeof BACKUP_FORMAT
@@ -31,22 +32,6 @@ interface BackupFile {
   folders: FolderRecord[]
   book: Encoded<BookPageRecord>[]
   bookTitle: string | null
-}
-
-export function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  // fromCharCode takes its arguments on the stack, so feed it in chunks.
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  }
-  return btoa(binary)
-}
-
-export function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(base64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return bytes
 }
 
 async function encodeBlob(blob: Blob): Promise<EncodedBlob> {
@@ -76,7 +61,14 @@ export async function createBackup(contents: BackupContents, now = new Date()): 
   }
   parts.push(JSON.stringify(head).slice(0, -1), ',"stickers":[')
   for (const [i, sticker] of contents.stickers.entries()) {
-    parts.push(i ? ',' : '', JSON.stringify({ ...sticker, blob: await encodeBlob(sticker.blob) }))
+    parts.push(
+      i ? ',' : '',
+      JSON.stringify({
+        ...sticker,
+        blob: await encodeBlob(sticker.blob),
+        analysis: sticker.analysis && encodeAnalysis(sticker.analysis),
+      }),
+    )
   }
   parts.push('],"book":[')
   for (const [i, page] of contents.book.entries()) {
@@ -102,7 +94,9 @@ export async function readBackup(file: Blob): Promise<BackupContents> {
 
   const stickers = (data.stickers ?? []).map((s) => {
     if (typeof s.id !== 'string') throw new BackupError('The backup has a broken sticker')
-    return { ...s, blob: decodeBlob(s.blob, 'a sticker') } as StickerRecord
+    const sticker = { ...s, blob: decodeBlob(s.blob, 'a sticker'), analysis: decodeAnalysis(s.analysis) }
+    if (!sticker.analysis) delete sticker.analysis
+    return sticker as StickerRecord
   })
   const book = (data.book ?? []).map((p) => {
     if (typeof p.id !== 'string') throw new BackupError('The backup has a broken coloring page')

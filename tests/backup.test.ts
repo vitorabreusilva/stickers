@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { backupFilename, base64ToBytes, bytesToBase64, BackupError, createBackup, readBackup } from '../src/lib/backup'
+import { backupFilename, BackupError, createBackup, readBackup } from '../src/lib/backup'
+import { base64ToBytes, bytesToBase64 } from '../src/lib/codec'
 
 const png = (...bytes: number[]) => new Blob([new Uint8Array(bytes)], { type: 'image/png' })
 const bytesOf = async (blob: Blob) => Array.from(new Uint8Array(await blob.arrayBuffer()))
@@ -11,11 +12,23 @@ describe('base64', () => {
   })
 })
 
+// Not a multiple of 3 bytes, so base64 padding is exercised too.
+const embedding = Float32Array.from([0.5, -0.25, 1e-7, 3.14159, -0])
+
 describe('backup', () => {
   it('round-trips a collection with its pictures', async () => {
     const file = await createBackup({
       stickers: [
-        { id: 'a', blob: png(1, 2, 3), width: 10, height: 20, createdAt: 5, effect: 'holo', topic: 'dogs' },
+        {
+          id: 'a',
+          blob: png(1, 2, 3),
+          width: 10,
+          height: 20,
+          createdAt: 5,
+          effect: 'holo',
+          topic: 'dogs',
+          analysis: { version: 1, classes: [{ index: 207, name: 'golden retriever', score: 0.9 }], face: 0, drawn: 0.12, embedding },
+        },
         { id: 'b', blob: png(255, 0), width: 1, height: 1, createdAt: 4 },
       ],
       folders: [{ key: 'dogs', color: 'mint' }],
@@ -39,6 +52,10 @@ describe('backup', () => {
       ['a', 10, 'holo', 'dogs'],
       ['b', 1, undefined, undefined],
     ])
+    expect(back.stickers[0].analysis!.embedding).toBeInstanceOf(Float32Array)
+    expect(back.stickers[0].analysis!.embedding).toEqual(embedding)
+    expect(back.stickers[0].analysis!.classes[0].name).toBe('golden retriever')
+    expect('analysis' in back.stickers[1]).toBe(false)
     expect(await bytesOf(back.stickers[0].blob)).toEqual([1, 2, 3])
     expect(back.stickers[0].blob.type).toBe('image/png')
     expect(await bytesOf(back.stickers[1].blob)).toEqual([255, 0])
