@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import type { FolderColor, FolderKey } from './folders'
 import type { StickerAnalysis, TopicId } from './topics'
 
 export interface StickerRecord {
@@ -13,21 +14,40 @@ export interface StickerRecord {
   topic?: TopicId
 }
 
+/** How the user dressed up a folder in the collection. */
+export interface FolderRecord {
+  key: FolderKey
+  color: FolderColor
+}
+
 interface StickerDB extends DBSchema {
   stickers: {
     key: string
     value: StickerRecord
     indexes: { createdAt: number }
   }
+  folders: {
+    key: string
+    value: FolderRecord
+  }
 }
 
 let dbPromise: Promise<IDBPDatabase<StickerDB>> | undefined
 
 function db() {
-  dbPromise ??= openDB<StickerDB>('stickers', 1, {
-    upgrade(database) {
-      const store = database.createObjectStore('stickers', { keyPath: 'id' })
-      store.createIndex('createdAt', 'createdAt')
+  // Each step only adds to what the previous version had, so existing collections are kept.
+  dbPromise ??= openDB<StickerDB>('stickers', 2, {
+    upgrade(database, oldVersion) {
+      if (oldVersion < 1) {
+        const store = database.createObjectStore('stickers', { keyPath: 'id' })
+        store.createIndex('createdAt', 'createdAt')
+      }
+      if (oldVersion < 2) database.createObjectStore('folders', { keyPath: 'key' })
+    },
+    // Another tab with a newer version wants to upgrade: step aside and reopen on next use.
+    blocking(_current, _blocked, event) {
+      ;(event.target as IDBDatabase).close()
+      dbPromise = undefined
     },
   })
   return dbPromise
@@ -53,6 +73,14 @@ export async function updateSticker(id: string, patch: Partial<Omit<StickerRecor
 
 export async function deleteSticker(id: string): Promise<void> {
   await (await db()).delete('stickers', id)
+}
+
+export async function listFolders(): Promise<FolderRecord[]> {
+  return (await db()).getAll('folders')
+}
+
+export async function saveFolder(record: FolderRecord): Promise<void> {
+  await (await db()).put('folders', record)
 }
 
 export function newId(): string {
