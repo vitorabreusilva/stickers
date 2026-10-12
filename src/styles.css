@@ -1362,6 +1362,95 @@ button {
   margin: 0;
 }
 
+.paper-status small {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 650;
+  opacity: 0.85;
+}
+
+.paper-status-btn {
+  pointer-events: auto;
+}
+
+.paper-error {
+  max-width: 260px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #fff0f1;
+  color: #b4232a;
+  font-size: 14px;
+}
+
+.engine-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.engine-settings {
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.ai-sheet-backdrop {
+  z-index: 35;
+}
+
+.ai-sheet {
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.ai-sheet-intro {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.ai-field input,
+.ai-field select {
+  min-height: 46px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.ai-hint {
+  margin: -4px 0 4px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai-hint a {
+  color: var(--violet);
+}
+
+.ai-quality {
+  align-self: center;
+}
+
 .paper-size {
   margin: 10px 0 14px;
   color: var(--ink-soft);

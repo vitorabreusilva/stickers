@@ -345,18 +345,108 @@ test.describe('coloring book', () => {
     await page.addInitScript(() => localStorage.setItem('stickers.removeBackground', 'off'))
   })
 
-  test('turn a sticker into an A5 coloring page, add it to the book, and export the book', async ({ page }) => {
+  /** Makes a sticker from the sun picture and opens its coloring page. */
+  async function openColoringPage(page: Page) {
     await page.goto('/')
     await openPicture(page)
     await drawLoop(page)
     await page.getByRole('button', { name: 'Cut sticker' }).click()
     await page.getByRole('dialog', { name: 'Sticker preview' }).getByRole('button', { name: 'Add to collection' }).click()
     await expect(page.getByText('Added to your collection!')).toBeVisible()
-
     await page.getByRole('button', { name: 'Open sticker' }).click()
     await page.getByRole('dialog', { name: 'Sticker' }).getByRole('button', { name: 'Color' }).click()
+    return page.getByRole('dialog', { name: 'Coloring page' })
+  }
 
-    const studio = page.getByRole('dialog', { name: 'Coloring page' })
+  test('draw a page with AI using your own OpenAI key', async ({ page }) => {
+    // What OpenAI sends back: a line drawing, slightly grey and soft like a real one.
+    const drawing = await page.evaluate(() => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 1024
+      canvas.height = 1024
+      const ctx = canvas.getContext('2d')!
+      ctx.fillStyle = '#fbfbfb'
+      ctx.fillRect(0, 0, 1024, 1024)
+      ctx.strokeStyle = '#141414'
+      ctx.lineWidth = 9
+      ctx.beginPath()
+      ctx.arc(512, 512, 300, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.fillStyle = '#dddddd' // light shading the page should drop
+      ctx.fillRect(450, 450, 120, 120)
+      return canvas.toDataURL('image/png').split(',')[1]
+    })
+    const requests: { auth: string | null; body: string }[] = []
+    let reply = 401
+    await page.route('https://api.openai.com/v1/images/edits', async (route) => {
+      requests.push({ auth: route.request().headers()['authorization'] ?? null, body: route.request().postData() ?? '' })
+      if (reply === 401) {
+        reply = 200
+        await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Incorrect API key provided' } }) })
+        return
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ b64_json: drawing }] }) })
+    })
+
+    const studio = await openColoringPage(page)
+    // AI is the default; until it has drawn, the free drawing is only a preview.
+    await expect(studio.getByRole('radio', { name: '✨ AI' })).toHaveAttribute('aria-checked', 'true')
+    await expect(studio.getByRole('button', { name: 'Add to book' })).toBeDisabled()
+
+    await studio.getByRole('button', { name: 'Set up AI drawing' }).click()
+    const sheet = page.getByRole('dialog', { name: 'AI drawing settings' })
+    await sheet.getByLabel('OpenAI API key').fill('sk-wrong')
+    await sheet.getByRole('radio', { name: 'Draft' }).click()
+    await expect(sheet.getByText('Each page costs about $0.013.')).toBeVisible()
+    await sheet.getByRole('button', { name: 'Save' }).click()
+
+    await studio.getByRole('button', { name: 'Draw with AI' }).click()
+    await expect(studio.getByRole('alert')).toHaveText('OpenAI rejected the API key. Check it in AI settings.')
+    expect(requests[0].auth).toBe('Bearer sk-wrong')
+
+    await studio.getByRole('button', { name: 'AI settings' }).click()
+    await sheet.getByLabel('OpenAI API key').fill('sk-right')
+    await sheet.getByRole('button', { name: 'Save' }).click()
+    await studio.getByRole('button', { name: 'Try again' }).click()
+
+    const preview = studio.getByTestId('coloring-page')
+    await expect(preview).toHaveAttribute('data-engine', 'ai', { timeout: 20_000 })
+    await expect(studio.getByRole('button', { name: 'Add to book' })).toBeEnabled()
+    expect(requests[1].auth).toBe('Bearer sk-right')
+    expect(requests[1].body).toContain('name="quality"\r\n\r\nlow')
+    expect(requests[1].body).toContain('coloring book')
+
+    // The drawing fills the page as crisp black lines; the grey shading is gone.
+    const sheetPixels = await preview.evaluate(async (img: HTMLImageElement) => {
+      await img.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      const at = (x: number, y: number) => ctx.getImageData(x, y, 1, 1).data[0]
+      let leftEdge = -1
+      for (let x = 0; x < canvas.width; x++) if (at(x, 1122) < 60) { leftEdge = x; break }
+      return { center: at(874, 1122), leftEdge }
+    })
+    expect(sheetPixels.center).toBe(255)
+    expect(sheetPixels.leftEdge).toBeGreaterThan(130)
+    expect(sheetPixels.leftEdge).toBeLessThan(200)
+
+    // Changing the detail level needs a new drawing, which costs money, so it waits to be asked.
+    await studio.getByRole('radio', { name: 'Simple' }).click()
+    await expect(studio.getByRole('button', { name: 'Draw with AI' })).toBeVisible()
+    await studio.getByRole('radio', { name: 'Medium' }).click()
+    await expect(preview).toHaveAttribute('data-engine', 'ai')
+    expect(requests).toHaveLength(2)
+
+    await studio.getByRole('button', { name: 'Add to book' }).click()
+    await expect(page.getByText('Added to your coloring book!')).toBeVisible()
+  })
+
+  test('turn a sticker into an A5 coloring page for free, add it to the book, and export the book', async ({ page }) => {
+    const studio = await openColoringPage(page)
+    await studio.getByRole('radio', { name: 'Free' }).click()
     const preview = studio.getByTestId('coloring-page')
     await expect(studio.getByRole('button', { name: 'Add to book' })).toBeEnabled({ timeout: 20_000 })
 

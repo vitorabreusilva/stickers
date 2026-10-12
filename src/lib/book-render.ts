@@ -1,5 +1,6 @@
 // Draws coloring pages and the book cover at print resolution, and exports them as PDF or prints them.
 
+import { aiSize, requestAiLineArt, type AiSettings } from './ai-coloring'
 import { ART_BOX, collageLayout, DPI, FOOTER_BOX, fitBox, mmToPx, PAGE_MM, PAGE_PX } from './book-layout'
 import { LINE_WIDTHS_MM, type ColoringDetail } from './coloring'
 import type { ColoringReply, ColoringRequest } from './coloring-protocol'
@@ -62,22 +63,61 @@ export async function drawColoringArt(sticker: Blob, detail: ColoringDetail): Pr
 
   const mm = DPI / 25.4
   const widths = LINE_WIDTHS_MM[detail]
-  const request: ColoringRequest = {
+  return runWorker({
     id: nextId++,
+    type: 'trace',
     image,
     detail,
     width: ART_BOX.width,
     height: ART_BOX.height,
     style: { line: widths.line * mm, outline: widths.outline * mm },
-  }
+  })
+}
+
+async function runWorker(request: ColoringRequest): Promise<HTMLCanvasElement> {
   const { pixels, width, height } = await new Promise<ArtResult>((resolve, reject) => {
     jobs.set(request.id, { resolve, reject })
-    getWorker().postMessage(request, [image.data.buffer])
+    getWorker().postMessage(request, [request.image.data.buffer])
   })
-
   const art = createCanvas(width, height)
   context(art).putImageData(new ImageData(pixels, width, height), 0, 0)
   return art
+}
+
+/**
+ * Line art for a sticker drawn by OpenAI's image model, tidied and sized to fill the drawing area
+ * of an A5 page. The sticker is sent on white, shaped like the picture that comes back.
+ */
+export async function drawAiColoringArt(
+  sticker: Blob,
+  detail: ColoringDetail,
+  settings: AiSettings,
+  signal?: AbortSignal,
+): Promise<HTMLCanvasElement> {
+  const bitmap = await createImageBitmap(sticker)
+  const size = aiSize(bitmap.width / bitmap.height)
+  const [width, height] = size.split('x').map(Number)
+  const input = createCanvas(width, height)
+  const ictx = context(input)
+  ictx.fillStyle = '#fff'
+  ictx.fillRect(0, 0, width, height)
+  const spot = fitBox(bitmap.width / bitmap.height, { x: width * 0.06, y: height * 0.06, width: width * 0.88, height: height * 0.88 })
+  ictx.drawImage(bitmap, spot.x, spot.y, spot.width, spot.height)
+  bitmap.close()
+
+  const drawn = await requestAiLineArt(await canvasToBlob(input), size, detail, settings, signal)
+  const result = await createImageBitmap(drawn)
+  const canvas = createCanvas(result.width, result.height)
+  const cctx = context(canvas)
+  cctx.drawImage(result, 0, 0)
+  result.close()
+  return runWorker({
+    id: nextId++,
+    type: 'clean',
+    image: cctx.getImageData(0, 0, canvas.width, canvas.height),
+    width: ART_BOX.width,
+    height: ART_BOX.height,
+  })
 }
 
 /**
