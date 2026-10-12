@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { deleteBookPage, listBookPages, reorderBook, saveBookPage, type BookPageRecord } from '../lib/db'
+import { collectionEvents, deleteBookPage, listBookPages, reorderBook, saveBookPage, type BookPageRecord } from '../lib/db'
 
 export interface BookPage extends BookPageRecord {
   /** Object URL of the page, for <img>. */
@@ -28,14 +28,29 @@ export function useColoringBook() {
 
   useEffect(() => {
     let cancelled = false
-    listBookPages()
-      .then((records) => !cancelled && commit(records.map(withUrl)))
-      .catch((err) => {
-        console.error('Could not load the coloring book', err)
-        if (!cancelled) commit([])
-      })
+    const load = () =>
+      listBookPages()
+        .then((records) => {
+          if (cancelled) return
+          const ids = new Set(records.map((r) => r.id))
+          urls.current.forEach((url, id) => {
+            if (!ids.has(id)) {
+              urls.current.delete(id)
+              setTimeout(() => URL.revokeObjectURL(url), 1000)
+            }
+          })
+          commit(records.map(withUrl))
+        })
+        .catch((err) => {
+          console.error('Could not load the coloring book', err)
+          if (!cancelled && !pagesRef.current.length) commit([])
+        })
+    load()
+    // Synced in from another device.
+    collectionEvents.addEventListener('remote', load)
     return () => {
       cancelled = true
+      collectionEvents.removeEventListener('remote', load)
     }
   }, [withUrl])
 

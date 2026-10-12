@@ -9,6 +9,7 @@ import { StickerDetail } from './components/StickerDetail'
 import { StickerPreview } from './components/StickerPreview'
 import { cutoutPreferred, preloadCutout } from './lib/cutout'
 import { newId, requestPersistentStorage } from './lib/db'
+import { SIGN_IN_ERROR_PARAM } from './lib/account'
 import { canReadClipboard, firstImageFile, readClipboardImage, takeSharedImage } from './lib/device'
 import { folderColor, folderLabel, type FolderKey } from './lib/folders'
 import type { Point } from './lib/geometry'
@@ -16,6 +17,7 @@ import { loadImage, type LoadedImage } from './lib/image'
 import type { StickerEffect } from './lib/effects'
 import type { StickerImage } from './lib/sticker'
 import { assignTopics, groupByTopic } from './lib/topics'
+import { useAccount } from './hooks/useAccount'
 import { useAutoAnalysis } from './hooks/useAutoAnalysis'
 import { useColoringBook } from './hooks/useColoringBook'
 import { useFolderColors } from './hooks/useFolderColors'
@@ -44,6 +46,7 @@ export function App() {
   const [freshId, setFreshId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
+  const { account, sync, syncNow, signOut } = useAccount()
 
   const openImage = useCallback(
     async (blob: Blob) => {
@@ -79,6 +82,15 @@ export function App() {
     home()
     showToast('Added to your collection!')
   }
+
+  // Google sign-in that didn't work comes back with ?error=…; the sheet explains what happened.
+  useEffect(() => {
+    const url = new URL(location.href)
+    if (!url.searchParams.has(SIGN_IN_ERROR_PARAM)) return
+    url.searchParams.delete(SIGN_IN_ERROR_PARAM)
+    history.replaceState(history.state, '', url)
+    setBackupOpen(true)
+  }, [])
 
   // Images shared to the installed app from the Android share sheet.
   useEffect(() => {
@@ -127,6 +139,7 @@ export function App() {
         bookPages={book.pages?.length ?? null}
         onOpenBook={() => push({ kind: 'book' })}
         onOpenBackup={() => setBackupOpen(true)}
+        synced={account.status === 'signed-in'}
       />
 
       {stack.map((screen, i) => {
@@ -210,7 +223,16 @@ export function App() {
         }
       })}
 
-      {backupOpen && <BackupSheet onClose={() => setBackupOpen(false)} toast={showToast} />}
+      {backupOpen && (
+        <BackupSheet
+          account={account}
+          sync={sync}
+          onSyncNow={syncNow}
+          onSignOut={signOut}
+          onClose={() => setBackupOpen(false)}
+          toast={showToast}
+        />
+      )}
       {busy && <div className="busy" aria-label="Opening picture"><div className="spinner" /></div>}
       {toast && (
         <div className="toast" role="status">

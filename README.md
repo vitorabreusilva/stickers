@@ -11,21 +11,35 @@ A mobile-first PWA for collecting stickers from pictures you find online. Pick a
 - **Collection**: stickers are stored on the device in IndexedDB and work offline. Open one to share it, copy it to the clipboard, download it as a PNG, or delete it.
 - **Grouped by topic**: stickers are sorted automatically into topics such as People, Dogs, Food & drinks and Cartoons & art, using small on-device models. Nothing leaves the phone. Tap a topic chip to filter, or move a sticker to another topic by hand from its detail view.
 - **Coloring book** *(beta)*: open a sticker and tap *Color* to turn it into line art on an A5 page (148 × 210 mm), ready to print and colour in with pencils. **✨ AI** has an image model redraw the sticker as clean, professional line art: OpenAI GPT Image, Google Nano Banana 2, FLUX Kontext Pro, Seedream 4 and Qwen Image Edit on fal.ai, or QuiverAI's Arrow 2, which draws true vector (SVG) line art. It uses your own API keys (set them in *AI settings*; they're stored only on your device, and you pay the provider per page). When a model declines a sticker, the page offers the others you've set up. **Free** traces the lines on the device, offline. Pick Simple, Medium or Detailed, and optionally put the original sticker in the corner as a colour guide. Print the page or save it as a PDF, or add it to your coloring book. The book gets a cover made from all the stickers you used, with a title you choose, and prints or saves as one PDF.
-- **Backup**: the box button on the home screen saves the whole collection (stickers, folder colours, coloring book) to one JSON file, and restores one. Restoring adds to what's there and never deletes. AI keys aren't included.
-- **Private and offline**: pictures never leave the device. After the first cutout, the model is cached and background removal works offline too.
+- **Sync across devices**: sign in with Google (invited emails only) and the collection, folder colours and coloring book follow you to every device. It's local-first: everything is saved on the device and works offline or signed out, and changes sync in the background when there's a connection.
+- **Backup**: the *Sync and backup* sheet also saves the whole collection (stickers, folder colours, coloring book) to one JSON file, and restores one. Restoring adds to what's there and never deletes. AI keys aren't included.
+- **Private**: cutting out, sorting and line tracing run on the device. When you sign in, stickers are stored in your account (a private Blob store, readable only through your signed-in session). AI keys stay on the device and never sync.
 
 ## Development
 
+The app is a Vite + React PWA. The API lives in `server/` (Hono, Better Auth, Drizzle), runs as one Vercel Function (`api/index.ts`), and is served by the Vite dev and preview servers too, so `npm run dev` gives you everything on one port.
+
 ```bash
 npm install
-npm run dev          # local dev server (downloads the cutout model on first run)
+cp .env.example .env.local   # then fill in BETTER_AUTH_SECRET (openssl rand -base64 32) and ALLOWED_EMAILS
+npm run db:up                # Postgres in Docker, on port 5433
+npm run db:migrate           # create the tables
+npm run dev                  # app and API on http://localhost:5173
+```
+
+Other commands:
+
+```bash
 npm run build        # production build in dist/
-npm run preview      # serve the production build
+npm run preview      # serve the production build (API included)
 npm run typecheck
-npm test             # unit tests (Vitest)
-npm run test:e2e     # end-to-end flows in Chromium (Playwright), including real background removal
+npm test             # unit tests, plus API tests against Postgres when DATABASE_URL is set
+npm run test:e2e     # end-to-end flows in Chromium, including two-device sync
+npm run db:generate  # write a migration after changing server/db/schema.ts
 npm run icons        # re-render PWA icons from public/favicon.svg and scripts/icon-maskable.svg
 ```
+
+Without `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` everything runs, but signing in fails. Tests don't need Google: they create sessions directly. Without a Blob token, pictures are kept in `.data/images/`.
 
 The on-device models (about 42 MB in total) aren't stored in git. They're listed in `scripts/models.json` with pinned URLs and SHA-256 checksums. Before `dev` and `build`, `scripts/fetch-models.mjs` downloads them from Google's model storage into `public/models/`.
 
@@ -33,17 +47,28 @@ To use a Chromium you already have instead of Playwright's download, set `CHROMI
 
 Service workers, clipboard access and installation need a secure context. They work on `localhost` and over HTTPS, but not over plain `http://<lan-ip>`.
 
-## Deploying to GitHub Pages
+## Deploying to Vercel
 
-`.github/workflows/deploy.yml` typechecks, tests and builds every pull request, and deploys every push to `main` to GitHub Pages.
+Vercel builds every push through its Git integration: production from `main`, previews from other branches. The build runs the database migrations first (`vercel.json`). `.github/workflows/check.yml` typechecks and tests every push and pull request against a throwaway Postgres.
 
 One-time setup:
 
-1. GitHub Pages needs a **public repository**, or GitHub Pro/Team for a private one.
-2. In **Settings → Pages**, set **Source** to **GitHub Actions**.
-3. Push to `main`, or run the workflow by hand from the Actions tab.
+1. **Project**: import the repository at [vercel.com/new](https://vercel.com/new). The settings come from `vercel.json`, so keep the defaults.
+2. **Database**: in the project, open **Storage → Create → Neon**, and connect it to all environments. This sets `DATABASE_URL` (and `DATABASE_URL_UNPOOLED`, which migrations use).
+3. **Pictures**: **Storage → Create → Blob**, with **Private** access, connected to all environments.
+4. **Google sign-in**: in [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an *OAuth client ID* of type *Web application*:
+   - Authorised JavaScript origins: `https://<your-domain>` and `http://localhost:5173`
+   - Authorised redirect URIs: `https://<your-domain>/api/auth/callback/google` and `http://localhost:5173/api/auth/callback/google`
+5. **Environment variables** (Settings → Environment Variables):
+   - `BETTER_AUTH_SECRET`: `openssl rand -base64 32`
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: from step 4
+   - `ALLOWED_EMAILS`: the Google emails that may sign in, comma-separated (`*` for anyone; empty lets no one in)
+   - `BETTER_AUTH_URL`: `https://<your-domain>`. Optional on the default `*.vercel.app` production domain.
+6. Redeploy so the build picks everything up.
 
-The app will be at `https://<user>.github.io/<repo>/`. The workflow reads the base path from the Pages settings, so a custom domain works as well. To build for another sub-path yourself, run `BASE_PATH=/some/path/ npm run build`.
+Sign-in works on the production domain. Preview deployments get their own URLs that Google doesn't know, so sign in there only if you add them to the OAuth client.
+
+**Moving from the GitHub Pages version**: the browser keeps each site's data separately, so the collection on `github.io` doesn't appear on the new domain by itself. On the old app, open *Backup* and download a backup. On the new one, sign in, then *Restore from a backup*, and it syncs to your account.
 
 ## How it works
 
@@ -64,7 +89,11 @@ The app will be at `https://<user>.github.io/<repo>/`. The workflow reads the ba
 | AI coloring pages (OpenAI) and print cleanup | `src/lib/ai-coloring.ts`, `src/lib/line-art.ts`, `src/components/AiSettingsSheet.tsx` |
 | A5 pages, cover collage, printing | `src/lib/book-layout.ts`, `src/lib/book-render.ts` |
 | PDF export | `src/lib/pdf.ts` |
-| Storage | `src/lib/db.ts` |
+| Storage, outbox of unsynced changes | `src/lib/db.ts` |
+| Sync engine (push outbox, pull changes) and Google sign-in | `src/lib/sync.ts`, `src/lib/account.ts`, `src/hooks/useAccount.ts` |
+| Sync protocol shared by app and server | `src/lib/sync-protocol.ts` |
+| API: auth, sync, pictures | `server/app.ts`, `server/auth.ts`, `server/sync.ts`, `server/images.ts` |
+| Database schema and migrations | `server/db/schema.ts`, `drizzle/` |
 | Backup file format, export and restore | `src/lib/backup.ts`, `src/components/BackupSheet.tsx` |
 | Service worker and share target | `src/sw.ts` |
 
@@ -90,6 +119,8 @@ On first use the model and runtime (about 44 MB, or roughly 35 MB over the wire)
 - **Background**: white pixels reachable from outside the sticker are flooded. When the flood stops on ink (an outlined drawing), all of it is backing and is dropped, including white page background that came with the cut-out. Otherwise only a border-thick band is dropped, so white subjects aren't eaten.
 - **Colour areas**: for parts without strokes, the original pixels are smoothed with edge-preserving diffusion and split into flat areas (k-means in Lab). Neighbouring areas that look alike or have no visible edge between them are merged, so a shaded gradient stays one area. Lines go where areas meet, but not right beside a stroke. The silhouette gets a thicker outline wherever the artwork has none of its own.
 - **Drawing**: lines are kept as smoothed distance fields (signed for strokes) and drawn at 300 dpi, so they come out anti-aliased and keep the same width in millimetres on paper whatever the sticker's size.
+
+**Sync** is local-first. Every edit is saved to IndexedDB together with an entry in an *outbox* (one per record, in the same transaction). When signed in, the app sends the outbox: pictures first (`PUT /api/images/…`, kept in a private Blob store under the user's id), then the records (`POST /api/sync`). Then it asks for everything that changed since the last revision it saw (`GET /api/sync?since=`). Every write on the server takes the next number from one Postgres sequence, and one person's writes are serialised with an advisory lock, so "everything after N" never skips a row. Deletions are kept as tombstones. A change from the server never overwrites a record with unsent local edits: those go up next and win. Pictures never change after they're made, so only new records download theirs. The first time an account syncs on a device, the whole local collection is uploaded to it. Sync runs on start, a moment after each edit, when the app comes back to the foreground or online, and every couple of minutes while it's open. The allowlist is checked on every request, so removing an email locks that person out straight away.
 
 PDFs are written by a small built-in writer: greyscale pages compressed with the browser's `CompressionStream`, and a JPEG cover.
 

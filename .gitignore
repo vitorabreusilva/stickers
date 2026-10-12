@@ -6,3 +6,8 @@ dev-dist
 test-results
 playwright-report
 public/models
+
+.env
+.env.local
+.data
+.vercel

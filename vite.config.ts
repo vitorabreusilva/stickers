@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { readFileSync, statSync } from 'node:fs'
-import { defineConfig } from 'vite'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
@@ -19,6 +20,44 @@ const fileSize = (path: string) => {
   }
 }
 
+type Middleware = (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => void
+
+/** Hands /api requests to the app `load` returns. */
+function apiMiddleware(load: () => Promise<{ createApp: () => { fetch: (r: Request) => Response | Promise<Response> } }>): Middleware {
+  return async (req, res, next) => {
+    if (!req.url?.startsWith('/api/')) return next()
+    try {
+      const { getRequestListener } = await import('@hono/node-server')
+      const { createApp } = await load()
+      await getRequestListener(createApp().fetch)(req, res)
+    } catch (err) {
+      next(err)
+    }
+  }
+}
+
+/**
+ * Serves /api from server/app.ts with `npm run dev` and `npm run preview`: the same app Vercel runs
+ * as a Function. In dev it's reloaded on every request, so server edits apply straight away.
+ */
+function api(): Plugin {
+  const loadEnvFiles = (mode: string) =>
+    Object.assign(process.env, { ...loadEnv(mode, process.cwd(), ''), ...process.env })
+  return {
+    name: 'stickers-api',
+    configureServer(server) {
+      loadEnvFiles(server.config.mode)
+      server.middlewares.use(apiMiddleware(() => server.ssrLoadModule('/server/app.ts') as never))
+    },
+    configurePreviewServer(server) {
+      loadEnvFiles(server.config.mode)
+      server.middlewares.use(
+        apiMiddleware(async () => (await import('tsx/esm/api')).tsImport('./server/app.ts', import.meta.url)),
+      )
+    },
+  }
+}
+
 export default defineConfig({
   base,
   define: {
@@ -26,6 +65,7 @@ export default defineConfig({
     __CUTOUT_BYTES__: fileSize(`public/${modelPaths.cutout}`) + fileSize(VISION_WASM),
   },
   plugins: [
+    api(),
     react(),
     VitePWA({
       strategies: 'injectManifest',
