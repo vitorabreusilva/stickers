@@ -1606,8 +1606,6 @@ button {
   color: #fff;
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .paper-stage {
@@ -1958,6 +1956,91 @@ button {
   padding: 0 12px;
   background: var(--danger);
   color: #fff;
+}
+
+.book-page-edit {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow:
+    0 2px 6px rgba(40, 20, 60, 0.2),
+    inset 0 0 0 1.5px var(--line);
+  color: var(--violet);
+}
+
+.book-page-edit svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Pages are picked up with a long press, so the picture's own menu and text selection stay out of it. */
+.book-page-page .book-page-open {
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.book-pages.sorting {
+  cursor: grabbing;
+}
+
+.book-pages.sorting .book-page-open {
+  transform: none;
+  transition: none;
+}
+
+.drag-placeholder > * {
+  visibility: hidden;
+}
+
+.drag-placeholder::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 42px;
+  border: 2px dashed color-mix(in srgb, var(--violet) 55%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--violet) 8%, transparent);
+}
+
+.book-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  pointer-events: none;
+  filter: drop-shadow(0 14px 22px rgba(40, 20, 60, 0.3));
+  will-change: transform;
+}
+
+.book-drag-hint {
+  margin: -12px 0 24px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.page-sheet-preview {
+  align-self: center;
+  width: 128px;
+}
+
+.page-sheet-guide {
+  max-width: none;
+}
+
+.page-sheet-heading {
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 750;
 }
 
 button.paper {

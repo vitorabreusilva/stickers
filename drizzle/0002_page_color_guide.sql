@@ -1,0 +1,1 @@
+ALTER TABLE "book_pages" ADD COLUMN "hide_guide" boolean DEFAULT false NOT NULL;

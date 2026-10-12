@@ -132,6 +132,13 @@ export const PrintIcon = () => (
   </Icon>
 )
 
+export const PencilIcon = () => (
+  <Icon>
+    <path d="M15.5 4.5l4 4L9 19H5v-4z" />
+    <path d="M13 7l4 4" />
+  </Icon>
+)
+
 export const ChevronLeftIcon = () => (
   <Icon>
     <path d="M14 7l-5 5 5 5" />

@@ -49,6 +49,8 @@ export interface BookPageRecord {
   /** The A5 page as a PNG at print resolution; page numbers and running heads are added when printing. */
   page: Blob
   detail: ColoringDetail
+  /** Leaves out the colour guide (the sticker in the corner) the page was made with. */
+  hideGuide?: boolean
   /** Order in the book; lower comes first. */
   position: number
   createdAt: number
@@ -239,6 +241,14 @@ export async function getBookPage(id: string): Promise<BookPageRecord | undefine
 export async function saveBookPage(record: BookPageRecord): Promise<void> {
   const tx = (await db()).transaction(['book', 'outbox'], 'readwrite')
   await Promise.all([tx.objectStore('book').put(record), enqueue(tx.objectStore('outbox'), 'book', record.id, true)])
+  await tx.done
+  changedLocally()
+}
+
+/** Saves a change to a page that leaves its pictures as they were, so they aren't uploaded again. */
+export async function updateBookPage(record: BookPageRecord): Promise<void> {
+  const tx = (await db()).transaction(['book', 'outbox'], 'readwrite')
+  await Promise.all([tx.objectStore('book').put(record), enqueue(tx.objectStore('outbox'), 'book', record.id)])
   await tx.done
   changedLocally()
 }

@@ -237,8 +237,11 @@ export function App() {
                   back()
                   showToast(`Deleted ${book.title}`)
                 }}
+                books={books.books ?? []}
+                onCreateBook={() => books.create()}
                 onRemovePage={books.removePage}
-                onMovePage={books.movePage}
+                onReorderPages={(ids) => books.reorderPages(book.id, ids)}
+                onUpdatePage={books.updatePage}
                 onPreview={(side) => push({ kind: 'book-preview', id: book.id, side })}
                 onClose={back}
                 toast={showToast}

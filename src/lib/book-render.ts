@@ -310,9 +310,9 @@ async function drawCover(ctx: CanvasRenderingContext2D, stickers: CoverSticker[]
   ctx.fillText(text, PAGE_PX.width / 2, titleY, maxWidth)
   const small = mmToPx(3.6)
   ctx.font = `800 ${small}px ${FONT}`
-  track(ctx, 0.2, small)
+  track(ctx, 0.02, small)
   ctx.fillStyle = palette.accent
-  ctx.fillText('A COLORING BOOK', PAGE_PX.width / 2, titleY + mmToPx(10))
+  ctx.fillText('A coloring book', PAGE_PX.width / 2, titleY + mmToPx(10))
   track(ctx, 0, small)
   ctx.textAlign = 'start'
 
@@ -363,9 +363,9 @@ function drawBackCover(ctx: CanvasRenderingContext2D, title: string, style: Cove
   ctx.fillText(title.trim() || DEFAULT_TITLE, cx, logoY + mmToPx(16), PAGE_PX.width - mmToPx(24))
   const small = mmToPx(2.8)
   ctx.font = `700 ${small}px ${FONT}`
-  track(ctx, 0.12, small)
+  track(ctx, 0.02, small)
   ctx.globalAlpha = 0.7
-  ctx.fillText('MADE WITH STICKERS', cx, logoY + mmToPx(22))
+  ctx.fillText('Made with stickers', cx, logoY + mmToPx(22))
   ctx.globalAlpha = 1
   track(ctx, 0, small)
   ctx.textAlign = 'start'
@@ -409,13 +409,13 @@ function drawPageFurniture(ctx: CanvasRenderingContext2D, title: string, folio: 
   const dir = recto ? -1 : 1 // from the outer edge inwards
 
   const headY = mmToPx(8)
-  const size = mmToPx(2.5)
+  const size = mmToPx(2.8)
   ctx.font = `800 ${size}px ${FONT}`
-  track(ctx, 0.18, size)
+  track(ctx, 0.02, size)
   ctx.fillStyle = INK_SOFT
   ctx.textBaseline = 'middle'
   ctx.textAlign = recto ? 'right' : 'left'
-  const text = (title.trim() || DEFAULT_TITLE).toUpperCase()
+  const text = title.trim() || DEFAULT_TITLE
   const maxText = PAGE_PX.width - 2 * margin - mmToPx(14)
   ctx.fillText(text, outer, headY, maxText)
   const textWidth = Math.min(ctx.measureText(text).width, maxText)
@@ -498,8 +498,8 @@ function pageHasGuide(id: string, page: Blob): Promise<boolean> {
   return known
 }
 
-/** A stored coloring page, with the old footer line wiped. */
-async function drawStoredPage(ctx: CanvasRenderingContext2D, id: string, page: Blob, scale: number) {
+/** A stored coloring page, with the old footer line wiped, and the colour guide too if it's hidden. */
+async function drawStoredPage(ctx: CanvasRenderingContext2D, { id, page, hideGuide }: StoredPage, scale: number) {
   const [bitmap, guide] = await Promise.all([
     scale < 1
       ? createImageBitmap(page, {
@@ -508,7 +508,7 @@ async function drawStoredPage(ctx: CanvasRenderingContext2D, id: string, page: B
           resizeQuality: 'high',
         })
       : createImageBitmap(page),
-    pageHasGuide(id, page),
+    hideGuide ? false : pageHasGuide(id, page),
   ])
   ctx.drawImage(bitmap, 0, 0, PAGE_PX.width, PAGE_PX.height)
   bitmap.close()
@@ -517,11 +517,17 @@ async function drawStoredPage(ctx: CanvasRenderingContext2D, id: string, page: B
   ctx.fillRect(0, FOOTER_BOX.y, right, PAGE_PX.height - FOOTER_BOX.y)
 }
 
+export interface StoredPage {
+  id: string
+  page: Blob
+  hideGuide?: boolean
+}
+
 /** What it takes to draw any side of a book. */
 export interface BookContents {
   title: string
   style: CoverStyle
-  pages: { id: string; page: Blob }[]
+  pages: StoredPage[]
   stickers: CoverSticker[]
 }
 
@@ -539,8 +545,7 @@ export async function renderSide(side: BookSide, book: BookContents, scale = 1):
       drawInsideCover(ctx)
       break
     case 'page': {
-      const { id, page } = book.pages[side.index]
-      await drawStoredPage(ctx, id, page, scale)
+      await drawStoredPage(ctx, book.pages[side.index], scale)
       drawPageFurniture(ctx, book.title, side.folio)
       break
     }

@@ -110,7 +110,7 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
           folders: [{ key: 'dogs', color: 'mint' }],
           book: [
             { id: 'p1', stickerId: 's1', detail: 'simple', position: 0, createdAt: 3 },
-            { id: 'p2', bookId: 'b2', stickerId: 's2', detail: 'medium', position: 0, createdAt: 4 },
+            { id: 'p2', bookId: 'b2', stickerId: 's2', detail: 'medium', hideGuide: true, position: 0, createdAt: 4 },
           ],
           books: [{ id: 'b2', title: 'Holiday', background: 'night', layout: 'wild', createdAt: 4 }],
           settings: { bookTitle: 'Rex' },
@@ -127,8 +127,8 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     expect(first.folders).toEqual([{ key: 'dogs', color: 'mint' }])
     // Pages from devices that don't know about books yet land in the first book.
     expect(first.book).toEqual([
-      { id: 'p1', bookId: 'default', stickerId: 's1', detail: 'simple', position: 0, createdAt: 3, effect: null },
-      { id: 'p2', bookId: 'b2', stickerId: 's2', detail: 'medium', position: 0, createdAt: 4, effect: null },
+      { id: 'p1', bookId: 'default', stickerId: 's1', detail: 'simple', position: 0, createdAt: 3, effect: null, hideGuide: false },
+      { id: 'p2', bookId: 'b2', stickerId: 's2', detail: 'medium', position: 0, createdAt: 4, effect: null, hideGuide: true },
     ])
     expect(first.books).toEqual([{ id: 'b2', title: 'Holiday', background: 'night', layout: 'wild', createdAt: 4 }])
     expect(first.settings).toEqual({ bookTitle: 'Rex' })
@@ -145,11 +145,16 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     expect(second.book).toEqual([])
     expect(second.books).toEqual([{ id: 'b2', deleted: true, title: '', background: '', layout: '', createdAt: 0 }])
 
-    // A device that doesn't know about books moving a page leaves it in its book.
+    // A device that doesn't know about books moving a page leaves it in its book, and one that
+    // doesn't know about hiding the colour guide leaves that as it was.
     await pushJson(me.cookie, { book: [{ id: 'p2', stickerId: 's2', detail: 'medium', position: 3, createdAt: 4 }] })
     const third = await pullJson(me.cookie, second.rev)
     expect(third.book).toEqual([
-      { id: 'p2', bookId: 'b2', stickerId: 's2', detail: 'medium', position: 3, createdAt: 4, effect: null },
+      { id: 'p2', bookId: 'b2', stickerId: 's2', detail: 'medium', position: 3, createdAt: 4, effect: null, hideGuide: true },
+    ])
+    await pushJson(me.cookie, { book: [{ id: 'p2', bookId: 'b3', stickerId: 's2', detail: 'medium', position: 0, createdAt: 4 }] })
+    expect((await pullJson(me.cookie, third.rev)).book).toEqual([
+      { id: 'p2', bookId: 'b3', stickerId: 's2', detail: 'medium', position: 0, createdAt: 4, effect: null, hideGuide: true },
     ])
     expect(second.settings).toBeUndefined()
     expect((await pullJson(me.cookie, second.rev)).stickers).toEqual([])
