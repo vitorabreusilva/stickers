@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 
 const SKY = [0x7c, 0xc6, 0xff]
@@ -127,6 +128,55 @@ test.describe('with background removal off', () => {
     await detail.getByRole('button', { name: 'Delete' }).click()
     await detail.getByRole('button', { name: 'Sure?' }).click()
     await expect(page.getByText('Your sticker book is empty')).toBeVisible()
+  })
+
+  test('pick an effect, keep it, change it later, and share it baked in', async ({ page }) => {
+    await page.goto('/')
+    await openPicture(page)
+    await drawLoop(page)
+    await page.getByRole('button', { name: 'Cut sticker' }).click()
+
+    const preview = page.getByRole('dialog', { name: 'Sticker preview' })
+    const effects = preview.getByRole('radiogroup', { name: 'Effect' })
+    // New stickers start plain; every swatch previews the actual sticker.
+    await expect(effects.getByRole('radio', { name: 'None' })).toHaveAttribute('aria-checked', 'true')
+    await expect(effects.locator('.effect-swatch img')).toHaveCount(7)
+    await effects.getByRole('radio', { name: 'Holo' }).click()
+    await expect(effects.getByRole('radio', { name: 'Holo' })).toHaveAttribute('aria-checked', 'true')
+    await expect(preview.locator('.preview-sticker [data-effect="holo"] .sticker-art-layer').first()).toBeVisible()
+    await preview.getByRole('button', { name: 'Add to collection' }).click()
+
+    // Shown with its effect in the grid, and still there after a reload.
+    await expect(page.locator('.grid-item [data-effect="holo"]')).toHaveCount(1)
+    await page.reload()
+    await expect(page.locator('.grid-item [data-effect="holo"]')).toHaveCount(1)
+
+    await page.getByRole('button', { name: 'Open sticker' }).click()
+    const detail = page.getByRole('dialog', { name: 'Sticker' })
+    await expect(detail.locator('.detail-sticker [data-effect="holo"]')).toBeVisible()
+
+    // Saved images have the effect baked in, so they differ from the plain cut-out.
+    const original = await page.locator('.detail-sticker img').evaluate(async (img: HTMLImageElement) => {
+      const blob = await (await fetch(img.src)).blob()
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve((reader.result as string).split(',')[1])
+        reader.readAsDataURL(blob)
+      })
+    })
+    const [download] = await Promise.all([page.waitForEvent('download'), detail.getByRole('button', { name: 'Save' }).click()])
+    const saved = await readFile(await download.path())
+    expect(saved.subarray(1, 4).toString()).toBe('PNG')
+    expect(saved.toString('base64')).not.toBe(original)
+
+    // The effect can be changed afterwards, and that sticks too.
+    await detail.getByRole('button', { name: /Holo/ }).click()
+    const picker = detail.getByRole('dialog', { name: 'Choose effect' })
+    await picker.getByRole('radio', { name: 'Chrome' }).click()
+    await picker.getByRole('button', { name: 'Done' }).click()
+    await expect(detail.locator('.detail-sticker [data-effect="chrome"]')).toBeVisible()
+    await page.reload()
+    await expect(page.locator('.grid-item [data-effect="chrome"]')).toHaveCount(1)
   })
 
   test('whole picture option and the back button', async ({ page }) => {

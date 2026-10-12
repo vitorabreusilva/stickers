@@ -13,6 +13,9 @@
   --sticker-shadow: drop-shadow(0 1px 1px rgba(40, 20, 60, 0.2)) drop-shadow(0 6px 10px rgba(40, 20, 60, 0.18));
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Where the light falls on foil effects, -1…1; kept moving by lib/light.ts. */
+  --fx-x: -0.35;
+  --fx-y: -0.45;
   --font: ui-rounded, 'SF Pro Rounded', 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -205,11 +208,11 @@ button {
   opacity: 0.7;
 }
 
-.topic-pill {
+.topic-pill,
+.effect-pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin: -12px 0 22px;
   padding: 8px 14px;
   border: 0;
   border-radius: 999px;
@@ -641,13 +644,9 @@ button {
 }
 
 /* Positioned so a sticker's natural size can never stretch its square cell (or the page). */
-.grid-item img {
+.grid-item .sticker-art {
   position: absolute;
   inset: 6px;
-  width: calc(100% - 12px);
-  height: calc(100% - 12px);
-  object-fit: contain;
-  filter: var(--sticker-shadow);
   -webkit-touch-callout: none;
 }
 
@@ -707,6 +706,104 @@ button {
   font-size: 20px;
   font-weight: 800;
   pointer-events: none;
+}
+
+/* Sticker art: the picture plus its effect layers, contained in whatever box it's given. */
+
+.sticker-art {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  container-type: size;
+}
+
+.sticker-art-fx {
+  position: relative;
+  width: min(100cqw, 100cqh * var(--ar));
+  aspect-ratio: var(--ar);
+  filter: var(--sticker-shadow);
+  isolation: isolate;
+}
+
+.sticker-art-fx img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sticker-art-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+/* Effect picker */
+
+.effect-picker {
+  display: flex;
+  gap: 6px;
+  width: calc(100% + 32px);
+  margin: 0 -16px;
+  padding: 2px 16px 4px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.effect-picker::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 520px) {
+  .effect-picker {
+    justify-content: center;
+  }
+}
+
+.effect-swatch {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 68px;
+  padding: 6px 0 6px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 750;
+  scroll-snap-align: center;
+  transition:
+    background 0.2s,
+    transform 0.1s;
+}
+
+.effect-swatch:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.effect-swatch.active {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--ink);
+  color: var(--ink);
+}
+
+.effect-swatch-art {
+  display: block;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+}
+
+.effect-swatch:disabled .effect-swatch-art {
+  background: var(--line);
 }
 
 /* Lasso editor */
@@ -836,15 +933,11 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: min(40vh, 400px);
+  height: min(36vh, 380px);
   padding: 16px;
 }
 
 .preview-sticker {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  filter: var(--sticker-shadow);
   animation: peel 0.55s cubic-bezier(0.2, 1.4, 0.5, 1) both;
 }
 
@@ -862,7 +955,7 @@ button {
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .switch-row {
@@ -1051,10 +1144,9 @@ button {
 }
 
 .detail-sticker {
-  max-width: min(100%, 420px);
-  max-height: 50vh;
-  object-fit: contain;
-  filter: var(--sticker-shadow);
+  width: min(100%, 420px);
+  height: min(50vh, 420px);
+  flex: none;
   animation: pop 0.4s cubic-bezier(0.2, 1.5, 0.5, 1);
 }
 
@@ -1101,6 +1193,19 @@ button {
 .action-danger.confirming {
   background: var(--danger);
   color: #fff;
+}
+
+/* Topic and effect, side by side under the date. */
+.detail-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: -12px 0 22px;
+}
+
+.topic-picker .effect-picker {
+  margin-bottom: 4px;
 }
 
 /* Feedback */

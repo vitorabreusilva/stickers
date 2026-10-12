@@ -15,8 +15,9 @@ export const canReadClipboard = () => typeof navigator.clipboard?.read === 'func
 export const canCopyImage = () =>
   typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function'
 
-export async function copyImage(blob: Blob) {
-  await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+/** Copies a PNG. Taking a promise lets Safari keep the user's tap while the image is still being made. */
+export async function copyImage(png: Blob | Promise<Blob>) {
+  await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
 }
 
 export function canShareFile(file: File) {

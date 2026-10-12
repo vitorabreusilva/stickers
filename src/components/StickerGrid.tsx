@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import type { Sticker } from '../hooks/useStickers'
+import { StickerArt } from './StickerArt'
 
 interface Props {
   items: Sticker[]
@@ -25,7 +26,7 @@ export function StickerGrid({ items, label, freshId, onOpen }: Props) {
             onClick={() => onOpen(sticker.id)}
             aria-label="Open sticker"
           >
-            <img src={sticker.url} alt="" loading="lazy" decoding="async" draggable={false} />
+            <StickerArt image={sticker} effect={sticker.effect} lazy />
           </button>
         </li>
       ))}

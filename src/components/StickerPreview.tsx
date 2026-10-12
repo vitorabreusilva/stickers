@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
 import { cutoutFor, cutoutPreferred, setCutoutPreferred, type CutoutStatus } from '../lib/cutout'
+import { effectOf, type StickerEffect } from '../lib/effects'
 import type { Point } from '../lib/geometry'
 import type { LoadedImage } from '../lib/image'
 import { createSticker, OUTLINE_SIZES, type OutlineSize, type Selection, type StickerImage } from '../lib/sticker'
+import { EffectPicker } from './EffectPicker'
 import { BackIcon, SparkleIcon } from './icons'
+import { StickerArt } from './StickerArt'
 
 interface Props {
   image: LoadedImage
   loop: Point[]
   onBack: () => void
-  onSave: (sticker: StickerImage) => Promise<void>
+  onSave: (sticker: StickerImage, effect: StickerEffect) => Promise<void>
 }
 
 type Cutout =
@@ -19,6 +22,7 @@ type Cutout =
   | { kind: 'failed'; message: string }
 
 const OUTLINE_KEY = 'stickers.outline'
+const EFFECT_KEY = 'stickers.effect'
 const OUTLINE_LABELS: Record<OutlineSize, string> = { none: 'None', thin: 'Thin', thick: 'Thick' }
 
 function savedOutline(): OutlineSize {
@@ -31,8 +35,17 @@ function savedOutline(): OutlineSize {
   return 'thick'
 }
 
+function savedEffect(): StickerEffect {
+  try {
+    return effectOf(localStorage.getItem(EFFECT_KEY))
+  } catch {
+    return 'none'
+  }
+}
+
 export function StickerPreview({ image, loop, onBack, onSave }: Props) {
   const [outline, setOutline] = useState<OutlineSize>(savedOutline)
+  const [effect, setEffect] = useState<StickerEffect>(savedEffect)
   const [removeBg, setRemoveBg] = useState(cutoutPreferred)
   const [cutout, setCutout] = useState<Cutout>(() =>
     removeBg ? { kind: 'working', status: { stage: 'cutting' } } : { kind: 'off' },
@@ -108,6 +121,15 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
     }
   }
 
+  const chooseEffect = (value: StickerEffect) => {
+    setEffect(value)
+    try {
+      localStorage.setItem(EFFECT_KEY, value)
+    } catch {
+      // Not remembering the choice is fine.
+    }
+  }
+
   const toggleRemoveBg = () => {
     setRemoveBg(!removeBg)
     setCutoutPreferred(!removeBg)
@@ -117,7 +139,7 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
     if (!sticker || saving) return
     setSaving(true)
     try {
-      await onSave(sticker)
+      await onSave(sticker, effect)
     } catch (err) {
       console.error(err)
       setError('Could not save the sticker. Is your storage full?')
@@ -142,7 +164,7 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
           ) : cutout.kind === 'working' ? (
             <CutoutProgress status={cutout.status} />
           ) : sticker ? (
-            <img key={sticker.url} className="preview-sticker" src={sticker.url} alt="Sticker preview" />
+            <StickerArt key={sticker.url} className="preview-sticker" image={sticker} effect={effect} alt="Sticker preview" idle />
           ) : (
             <div className="spinner" aria-label="Cutting…" />
           )}
@@ -172,6 +194,8 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
               </button>
             ))}
           </div>
+
+          <EffectPicker image={cutout.kind === 'working' || error ? null : sticker} value={effect} onChange={chooseEffect} />
         </div>
 
         <div className="sheet-actions">
