@@ -12,6 +12,7 @@ import {
   reorderBook,
   saveBook,
   saveBookPage,
+  updateBookPage,
   type BookPageRecord,
   type BookRecord,
 } from '../lib/db'
@@ -164,28 +165,42 @@ export function useColoringBooks() {
     forgetUrl(id)
   }, [])
 
-  /** Moves a page `by` places earlier (negative) or later (positive) within its book. */
-  const movePage = useCallback(async (id: string, by: number) => {
-    const page = pagesRef.current.find((p) => p.id === id)
-    if (!page) return
-    const bookId = bookIdOf(page)
+  /** Puts a book's pages in the order of `ids`; other books' pages stay put. */
+  const reorderPages = useCallback(async (bookId: string, ids: string[]) => {
     const inBook = pagesRef.current.filter((p) => bookIdOf(p) === bookId)
-    const from = inBook.findIndex((p) => p.id === id)
-    const to = from + by
-    if (to < 0 || to >= inBook.length) return
-    inBook.splice(from, 1)
-    inBook.splice(to, 0, page)
-    // The book's pages fill their old slots in the new order; other books' pages stay put.
-    let next = 0
+    const byId = new Map(inBook.map((p) => [p.id, p]))
+    const ordered = ids.flatMap((id) => byId.get(id) ?? [])
+    // Pages not in `ids` (one synced in meanwhile, say) keep their place at the end.
+    ordered.push(...inBook.filter((p) => !ids.includes(p.id)))
+    if (ordered.every((p, i) => p === inBook[i])) return
+    const position = new Map(ordered.map((p, i) => [p.id, i]))
     commitPages(
-      pagesRef.current.map((p) => {
-        if (bookIdOf(p) !== bookId) return p
-        const position = next++
-        return { ...inBook[position], position }
-      }),
+      [...pagesRef.current.filter((p) => bookIdOf(p) !== bookId), ...ordered.map((p) => ({ ...p, position: position.get(p.id)! }))].sort(
+        (a, b) => a.position - b.position,
+      ),
     )
-    await reorderBook(inBook.map((p) => p.id))
+    await reorderBook(ordered.map((p) => p.id))
   }, [])
 
-  return { books, create, update, remove, addPage, removePage, movePage }
+  /** Changes a page: its book (it goes at the end), or whether it shows the colour guide. */
+  const updatePage = useCallback(async (id: string, patch: { bookId?: string; hideGuide?: boolean }) => {
+    const page = pagesRef.current.find((p) => p.id === id)
+    if (!page) return
+    const { url: _, ...record } = page
+    const next: BookPageRecord = { ...record }
+    if (patch.hideGuide !== undefined) {
+      if (patch.hideGuide) next.hideGuide = true
+      else delete next.hideGuide
+    }
+    if (patch.bookId !== undefined && patch.bookId !== bookIdOf(page)) {
+      const inBook = pagesRef.current.filter((p) => bookIdOf(p) === patch.bookId)
+      next.position = inBook.length ? inBook[inBook.length - 1].position + 1 : 0
+      if (patch.bookId === LEGACY_BOOK_ID) delete next.bookId
+      else next.bookId = patch.bookId
+    }
+    commitPages(pagesRef.current.map((p) => (p.id === id ? { ...next, url: page.url } : p)).sort((a, b) => a.position - b.position))
+    await updateBookPage(next)
+  }, [])
+
+  return { books, create, update, remove, addPage, removePage, reorderPages, updatePage }
 }

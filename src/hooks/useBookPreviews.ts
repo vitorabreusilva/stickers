@@ -52,7 +52,7 @@ export function bookContents(book: Book): BookContents {
   return {
     title: book.title,
     style: { background: book.background, layout: book.layout },
-    pages: book.pages.map(({ id, page }) => ({ id, page })),
+    pages: book.pages.map(({ id, page, hideGuide }) => ({ id, page, hideGuide })),
     stickers,
   }
 }
@@ -63,7 +63,10 @@ function sideKey(side: BookSide, book: BookContents): string {
     case 'cover':
       return `cover|${book.title}|${book.style.background}|${book.style.layout}|${book.stickers.map((s) => s.key).join(',')}`
     case 'page':
-      return `page|${book.pages[side.index].id}|${side.folio}|${book.title}`
+      {
+      const { id, hideGuide } = book.pages[side.index]
+      return `page|${id}|${hideGuide ? 'no-guide' : ''}|${side.folio}|${book.title}`
+    }
     case 'blank':
       return `blank|${side.folio}|${book.title}`
     case 'back':

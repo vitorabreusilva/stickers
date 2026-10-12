@@ -125,6 +125,7 @@ export const bookPages = pgTable(
     stickerId: text('sticker_id').notNull().default(''),
     effect: text('effect'),
     detail: text('detail').notNull().default('medium'),
+    hideGuide: boolean('hide_guide').notNull().default(false),
     position: integer('position').notNull().default(0),
     createdAt: bigint('created_at', { mode: 'number' }).notNull().default(0),
   },

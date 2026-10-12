@@ -72,6 +72,7 @@ function cleanPage(raw: unknown): SyncBookPage {
     stickerId: str(p.stickerId, 64) ?? '',
     effect: optional(p.effect, 40),
     detail: str(p.detail, 40) ?? 'medium',
+    ...(p.hideGuide != null && { hideGuide: p.hideGuide === true }),
     position: int(p.position),
     createdAt: int(p.createdAt),
   }
@@ -135,13 +136,18 @@ async function push(db: Db, userId: string, body: SyncPush) {
         .onConflictDoUpdate({ target: [folders.userId, folders.key], set: { rev: nextRev, color: sql`excluded.color` } })
     }
     // Devices that don't know about books yet send pages without one. New pages from them go in
-    // the first book, and their edits (a new position, say) leave the page in its book.
-    for (const knowsBooks of [false, true]) {
-      const pages = newPages.filter((p) => (p.bookId !== undefined) === knowsBooks)
+    // the first book, and their edits (a new position, say) leave the page in its book. Likewise,
+    // devices that don't know about hiding the colour guide leave it as it was.
+    for (const knowsBooks of [false, true]) for (const knowsGuide of [false, true]) {
+      const pages = newPages.filter(
+        (p) => (p.bookId !== undefined) === knowsBooks && (p.hideGuide !== undefined) === knowsGuide,
+      )
       if (!pages.length) continue
       await tx
         .insert(bookPages)
-        .values(pages.map((p) => ({ ...p, bookId: p.bookId ?? LEGACY_BOOK_ID, userId, deleted: !!p.deleted })))
+        .values(
+          pages.map((p) => ({ ...p, bookId: p.bookId ?? LEGACY_BOOK_ID, hideGuide: !!p.hideGuide, userId, deleted: !!p.deleted })),
+        )
         .onConflictDoUpdate({
           target: [bookPages.userId, bookPages.id],
           set: {
@@ -151,6 +157,7 @@ async function push(db: Db, userId: string, body: SyncPush) {
             stickerId: sql`excluded.sticker_id`,
             effect: sql`excluded.effect`,
             detail: sql`excluded.detail`,
+            ...(knowsGuide && { hideGuide: sql`excluded.hide_guide` }),
             position: sql`excluded.position`,
             createdAt: sql`excluded.created_at`,
           },
@@ -274,6 +281,7 @@ async function pull(db: Db, userId: string, since: number): Promise<SyncPull> {
               stickerId: row.stickerId,
               effect: row.effect,
               detail: row.detail,
+              hideGuide: row.hideGuide,
               position: row.position,
               createdAt: row.createdAt,
             },

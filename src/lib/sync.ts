@@ -84,6 +84,7 @@ const pageToSync = (p: BookPageRecord) => ({
   stickerId: p.stickerId,
   effect: p.effect ?? null,
   detail: p.detail,
+  hideGuide: !!p.hideGuide,
   position: p.position,
   createdAt: p.createdAt,
 })
@@ -210,6 +211,7 @@ async function pullPage(): Promise<boolean> {
         ...(p.bookId && p.bookId !== LEGACY_BOOK_ID && { bookId: p.bookId }),
         stickerId: p.stickerId,
         detail: p.detail as ColoringDetail,
+        ...(p.hideGuide && { hideGuide: true }),
         position: p.position,
         createdAt: p.createdAt,
         ...(p.effect && { effect: p.effect as StickerEffect }),

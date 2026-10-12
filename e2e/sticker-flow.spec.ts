@@ -642,8 +642,17 @@ test.describe('coloring book', () => {
     await expect(page.getByText('Added to Holiday!')).toBeVisible()
     await studio.getByRole('button', { name: 'Open book' }).click()
     await expect(book.getByLabel('Title')).toHaveValue('Holiday')
-    await book.getByRole('button', { name: 'Remove page 1' }).click()
-    await book.getByRole('button', { name: 'Really remove page 1?' }).click()
+
+    // Edit the page: leave out its colour guide, then move it to the first book.
+    await book.getByRole('button', { name: 'Edit page 1' }).click()
+    const pageSheet = page.getByRole('dialog', { name: 'Page 1' })
+    const guide = pageSheet.getByRole('switch', { name: 'Color guide in the corner' })
+    await expect(guide).toHaveAttribute('aria-checked', 'true')
+    await guide.click()
+    await expect(guide).toHaveAttribute('aria-checked', 'false')
+    await pageSheet.getByRole('button', { name: /^Sunny Days/ }).click()
+    await expect(page.getByText('Moved to Sunny Days')).toBeVisible()
+    await expect(pageSheet).toBeHidden()
     await expect(book.getByText('No pages yet')).toBeVisible()
 
     // Deleting a book takes its pages with it.
@@ -653,6 +662,46 @@ test.describe('coloring book', () => {
     await page.goBack()
     await page.goBack()
     await expect(shelf.getByRole('listitem')).toHaveCount(2)
+
+    // The moved page is the first book's second, without its colour guide.
+    await shelf.getByRole('button', { name: 'Sunny Days, 2 pages' }).click()
+    const guideInk = (name: string) =>
+      book.getByRole('img', { name, exact: true }).evaluate(async (img: HTMLImageElement) => {
+        await img.decode()
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(img, 0, 0)
+        const { width: w, height: h } = canvas
+        const { data } = ctx.getImageData(w * 0.75, h * 0.86, w * 0.17, h * 0.07)
+        let n = 0
+        for (let i = 0; i < data.length; i += 4) if (Math.min(data[i], data[i + 1], data[i + 2]) < 200) n++
+        return n
+      })
+    await expect(book.getByRole('img', { name: 'Page 2', exact: true })).toBeVisible({ timeout: 20_000 })
+    expect(await guideInk('Page 1')).toBeGreaterThan(0)
+    expect(await guideInk('Page 2')).toBe(0)
+
+    // Drag the second page in front of the first.
+    const pageIds = () => book.locator('[data-drag-id]').evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.dragId))
+    const [firstId, secondId] = await pageIds()
+    // Out from under the buttons docked at the bottom.
+    await book.getByRole('button', { name: 'Preview page 2' }).evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    const from = (await book.getByRole('button', { name: 'Preview page 2' }).boundingBox())!
+    const to = (await book.getByRole('button', { name: 'Preview page 1' }).boundingBox())!
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 3)
+    // Held first: on a touch screen a page is picked up with a long press.
+    await page.mouse.down()
+    await page.waitForTimeout(500)
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 3, { steps: 12 })
+    await page.mouse.up()
+    await expect.poll(pageIds).toEqual([secondId, firstId])
+    await expect.poll(() => guideInk('Page 1'), { timeout: 20_000 }).toBe(0)
+    // The order is kept.
+    await page.reload()
+    await shelf.getByRole('button', { name: 'Sunny Days, 2 pages' }).click()
+    await expect.poll(pageIds, { timeout: 10_000 }).toEqual([secondId, firstId])
   })
 })
 

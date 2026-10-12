@@ -45,6 +45,8 @@ export interface SyncBookPage {
   stickerId: string
   effect?: string | null
   detail: string
+  /** The colour guide in the corner is hidden. Missing from devices that haven't updated. */
+  hideGuide?: boolean
   position: number
   createdAt: number
 }
