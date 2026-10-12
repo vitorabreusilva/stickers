@@ -1,0 +1,69 @@
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      # The cutout model (~30 MB) isn't in git; scripts/fetch-model.mjs downloads it before the build.
+      - name: Cache cutout model
+        uses: actions/cache@v4
+        with:
+          path: public/models
+          key: cutout-model-${{ hashFiles('scripts/fetch-model.mjs') }}
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Read Pages settings
+        id: pages
+        if: env.DEPLOY == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Build
+        run: npm run build
+        env:
+          # "/<repo>" on github.io, "" with a custom domain.
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}/
+
+      - name: Upload site
+        if: env.DEPLOY == 'true'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
