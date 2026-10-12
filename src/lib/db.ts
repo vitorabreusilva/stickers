@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { FolderColor, FolderKey } from './folders'
+import type { StickerEffect } from './effects'
 import type { StickerAnalysis, TopicId } from './topics'
 
 export interface StickerRecord {
@@ -12,6 +13,11 @@ export interface StickerRecord {
   analysis?: StickerAnalysis
   /** Topic the user picked by hand, overriding the automatic one. */
   topic?: TopicId
+  /**
+   * Foil finish. Optional and unindexed, so no schema upgrade is needed: stickers saved before
+   * effects existed simply don't have it, and read as 'none' (see effectOf).
+   */
+  effect?: StickerEffect
 }
 
 /** How the user dressed up a folder in the collection. */

@@ -10,6 +10,7 @@ import { canReadClipboard, firstImageFile, readClipboardImage, takeSharedImage }
 import { folderColor, folderLabel, type FolderKey } from './lib/folders'
 import type { Point } from './lib/geometry'
 import { loadImage, type LoadedImage } from './lib/image'
+import type { StickerEffect } from './lib/effects'
 import type { StickerImage } from './lib/sticker'
 import { assignTopics, groupByTopic } from './lib/topics'
 import { useAutoAnalysis } from './hooks/useAutoAnalysis'
@@ -62,9 +63,9 @@ export function App() {
     }
   }
 
-  const saveSticker = async ({ blob, width, height }: StickerImage) => {
+  const saveSticker = async ({ blob, width, height }: StickerImage, effect: StickerEffect) => {
     const id = newId()
-    await add({ id, blob, width, height, createdAt: Date.now() })
+    await add({ id, blob, width, height, createdAt: Date.now(), ...(effect !== 'none' && { effect }) })
     requestPersistentStorage()
     setFreshId(id)
     home()
@@ -161,6 +162,7 @@ export function App() {
                 onClose={back}
                 toast={showToast}
                 onTopic={(topic) => update(sticker.id, { topic: topic ?? undefined })}
+                onEffect={(effect) => update(sticker.id, { effect })}
                 onDelete={async () => {
                   await remove(sticker.id)
                   back()
