@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { deleteSticker, listStickers, saveSticker, type StickerRecord } from '../lib/db'
+import { deleteSticker, listStickers, saveSticker, updateSticker, type StickerRecord } from '../lib/db'
 
 export interface Sticker extends StickerRecord {
   url: string
@@ -59,5 +59,10 @@ export function useStickers() {
     }
   }, [])
 
-  return { stickers, add, remove }
+  const update = useCallback(async (id: string, patch: Parameters<typeof updateSticker>[1]) => {
+    await updateSticker(id, patch)
+    setStickers((current) => current?.map((s) => (s.id === id ? { ...s, ...patch } : s)) ?? null)
+  }, [])
+
+  return { stickers, add, remove, update }
 }

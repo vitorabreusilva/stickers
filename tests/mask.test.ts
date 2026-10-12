@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { refineMask } from '../src/lib/mask'
+import { keepMainBlobs, refineMask } from '../src/lib/mask'
 
 /** A confidence mask with filled rects of the given value. */
 function maskWith(width: number, height: number, rects: [number, number, number, number, number][]) {
@@ -48,5 +48,18 @@ describe('refineMask', () => {
   it('returns null when nothing was found', () => {
     expect(refineMask(new Float32Array(100 * 100), 100, 100)).toBeNull()
     expect(refineMask(maskWith(100, 100, [[0, 0, 100, 100, 0.2]]), 100, 100)).toBeNull()
+  })
+})
+
+describe('keepMainBlobs', () => {
+  it('drops a floating watermark under the subject', () => {
+    const w = 100
+    const h = 100
+    const alpha = new Float32Array(w * h)
+    for (let y = 10; y < 70; y++) for (let x = 20; x < 80; x++) alpha[y * w + x] = 1
+    for (let x = 30; x < 70; x++) alpha[90 * w + x] = 1 // thin line well below
+    expect(keepMainBlobs(alpha, w, h)).toBe(true)
+    expect(alpha[90 * w + 50]).toBe(0)
+    expect(alpha[40 * w + 50]).toBe(1)
   })
 })

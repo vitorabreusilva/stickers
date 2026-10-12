@@ -54,40 +54,79 @@ export function distanceTransform(mask: Uint8Array, width: number, height: numbe
   return grid
 }
 
-/** Sets coverage to 1 for every pixel that isn't reachable from the image edge through partially-covered pixels. */
-function fillEnclosed(cover: Float32Array, width: number, height: number) {
+/**
+ * Fills gaps enclosed by the sticker (between legs, inside a handle) that are too small to cut out,
+ * i.e. that can't fit a circle of `keepRadius` px. Bigger gaps stay see-through.
+ */
+function fillSmallHoles(cover: Float32Array, width: number, height: number, keepRadius: number) {
   const size = width * height
   const outside = new Uint8Array(size)
   const stack = new Int32Array(size)
   let top = 0
-  const visit = (i: number) => {
+  const visitOutside = (i: number) => {
     if (!outside[i] && cover[i] < 1) {
       outside[i] = 1
       stack[top++] = i
     }
   }
   for (let x = 0; x < width; x++) {
-    visit(x)
-    visit((height - 1) * width + x)
+    visitOutside(x)
+    visitOutside((height - 1) * width + x)
   }
   for (let y = 0; y < height; y++) {
-    visit(y * width)
-    visit(y * width + width - 1)
+    visitOutside(y * width)
+    visitOutside(y * width + width - 1)
   }
   while (top > 0) {
     const i = stack[--top]
     const x = i % width
-    if (x > 0) visit(i - 1)
-    if (x < width - 1) visit(i + 1)
-    if (i >= width) visit(i - width)
-    if (i < size - width) visit(i + width)
+    if (x > 0) visitOutside(i - 1)
+    if (x < width - 1) visitOutside(i + 1)
+    if (i >= width) visitOutside(i - width)
+    if (i < size - width) visitOutside(i + width)
   }
-  for (let i = 0; i < size; i++) if (!outside[i]) cover[i] = 1
+
+  // How far each enclosed pixel is from solid sticker: the widest circle a gap can hold.
+  const solid = new Uint8Array(size)
+  let enclosed = false
+  for (let i = 0; i < size; i++) {
+    solid[i] = cover[i] >= 1 ? 1 : 0
+    if (!outside[i] && !solid[i]) enclosed = true
+  }
+  if (!enclosed) return
+  const dist2 = distanceTransform(solid, width, height)
+
+  const seen = new Uint8Array(size)
+  const members: number[] = []
+  for (let start = 0; start < size; start++) {
+    if (outside[start] || solid[start] || seen[start]) continue
+    members.length = 0
+    let widest = 0
+    top = 0
+    stack[top++] = start
+    seen[start] = 1
+    while (top > 0) {
+      const i = stack[--top]
+      members.push(i)
+      if (dist2[i] > widest) widest = dist2[i]
+      const x = i % width
+      const neighbors = [x > 0 ? i - 1 : -1, x < width - 1 ? i + 1 : -1, i >= width ? i - width : -1, i < size - width ? i + width : -1]
+      for (const n of neighbors) {
+        if (n >= 0 && !seen[n] && !outside[n] && !solid[n]) {
+          seen[n] = 1
+          stack[top++] = n
+        }
+      }
+    }
+    // Distances are between pixel centres, so a gap has about half a pixel more room than measured.
+    if (Math.sqrt(widest) < keepRadius + 0.5) for (const i of members) cover[i] = 1
+  }
 }
 
 /**
- * Lays the RGBA image over a white die-cut backing that extends `radius` px past its opaque pixels,
- * with enclosed gaps filled in like a real sticker. Leave enough transparent padding for the border.
+ * Lays the RGBA image over a white die-cut backing that extends `radius` px past its opaque pixels.
+ * Small enclosed gaps are filled in like a real sticker; big ones stay open. Leave enough transparent
+ * padding for the border.
  */
 export function addOutline(
   src: Uint8ClampedArray,
@@ -112,7 +151,8 @@ export function addOutline(
     const a = radius + 0.5 - Math.sqrt(dist2[i])
     cover[i] = a <= 0 ? 0 : a >= 1 ? 1 : a
   }
-  fillEnclosed(cover, width, height)
+  // Gaps that can hold a circle a third of the border width are worth cutting out.
+  fillSmallHoles(cover, width, height, Math.max(3, radius / 3))
 
   for (let i = 0; i < size; i++) {
     const j = i * 4

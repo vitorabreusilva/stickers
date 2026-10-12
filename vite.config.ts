@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -7,9 +7,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Set BASE_PATH when hosting under a sub-path, e.g. BASE_PATH=/stickers/ for GitHub Pages.
 const base = process.env.BASE_PATH ?? '/'
 
-// Background-removal model, downloaded into public/ by scripts/fetch-model.mjs (keep the name in sync).
-const CUTOUT_MODEL = 'models/magic-touch-v2-int8-1.task'
-const CUTOUT_WASM = 'node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_internal.wasm'
+// On-device models, downloaded into public/models/ by scripts/fetch-models.mjs.
+const models: Record<string, { file: string }> = JSON.parse(readFileSync('scripts/models.json', 'utf8'))
+const modelPaths = Object.fromEntries(Object.entries(models).map(([role, { file }]) => [role, `models/${file}`]))
+const VISION_WASM = 'node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_internal.wasm'
 const fileSize = (path: string) => {
   try {
     return statSync(path).size
@@ -21,8 +22,8 @@ const fileSize = (path: string) => {
 export default defineConfig({
   base,
   define: {
-    __CUTOUT_MODEL__: JSON.stringify(CUTOUT_MODEL),
-    __CUTOUT_BYTES__: fileSize(`public/${CUTOUT_MODEL}`) + fileSize(CUTOUT_WASM),
+    __MODELS__: JSON.stringify(modelPaths),
+    __CUTOUT_BYTES__: fileSize(`public/${modelPaths.cutout}`) + fileSize(VISION_WASM),
   },
   plugins: [
     react(),

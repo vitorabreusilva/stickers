@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import type { StickerAnalysis, TopicId } from './topics'
 
 export interface StickerRecord {
   id: string
@@ -6,6 +7,10 @@ export interface StickerRecord {
   width: number
   height: number
   createdAt: number
+  /** What the sticker shows, filled in in the background after saving. */
+  analysis?: StickerAnalysis
+  /** Topic the user picked by hand, overriding the automatic one. */
+  topic?: TopicId
 }
 
 interface StickerDB extends DBSchema {
@@ -36,6 +41,14 @@ export async function listStickers(): Promise<StickerRecord[]> {
 
 export async function saveSticker(record: StickerRecord): Promise<void> {
   await (await db()).put('stickers', record)
+}
+
+/** Applies `patch` to a saved sticker. Does nothing if it was deleted in the meantime. */
+export async function updateSticker(id: string, patch: Partial<Omit<StickerRecord, 'id' | 'blob'>>): Promise<void> {
+  const tx = (await db()).transaction('stickers', 'readwrite')
+  const record = await tx.store.get(id)
+  if (record) await tx.store.put({ ...record, ...patch })
+  await tx.done
 }
 
 export async function deleteSticker(id: string): Promise<void> {

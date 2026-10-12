@@ -56,6 +56,26 @@ function labelBlobs(on: Uint8Array, width: number, height: number) {
 }
 
 /**
+ * Zeroes everything but the main subject: blobs (alpha ≥ 0.5) at least MIN_BLOB_RATIO the size of
+ * the biggest, plus their soft edges within EDGE_REACH px. Returns false if there's no subject.
+ */
+export function keepMainBlobs(alpha: Float32Array, width: number, height: number): boolean {
+  const size = width * height
+  const core = new Uint8Array(size)
+  for (let i = 0; i < size; i++) core[i] = alpha[i] >= 0.5 ? 1 : 0
+  const { labels, areas } = labelBlobs(core, width, height)
+  let largest = 0
+  for (const area of areas) if (area > largest) largest = area
+  if (largest === 0) return false
+  const keep = new Uint8Array(size)
+  for (let i = 0; i < size; i++) keep[i] = labels[i] && areas[labels[i]] >= largest * MIN_BLOB_RATIO ? 1 : 0
+  const dist2 = distanceTransform(keep, width, height)
+  const reach2 = EDGE_REACH * EDGE_REACH
+  for (let i = 0; i < size; i++) if (dist2[i] > reach2) alpha[i] = 0
+  return true
+}
+
+/**
  * Turns a model's raw confidence mask into a clean sticker mask: crisp but anti-aliased edges,
  * only the main subject (stray specks dropped), and no faint haze. Null if there's no subject.
  */

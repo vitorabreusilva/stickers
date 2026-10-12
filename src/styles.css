@@ -170,6 +170,129 @@ button {
   letter-spacing: 0;
 }
 
+/* Topics */
+
+.chips {
+  display: flex;
+  gap: 8px;
+  margin: 0 -16px 4px;
+  padding: 4px 16px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chip span {
+  color: var(--ink-soft);
+  font-weight: 750;
+}
+
+.chip.active {
+  background: var(--ink);
+  box-shadow: none;
+  color: var(--bg);
+}
+
+.chip.active span {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.topic-section + .topic-section {
+  margin-top: 8px;
+}
+
+.topic-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 4px 2px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.topic-count {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.topic-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: -12px 0 22px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.topic-pill-note {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.topic-picker {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 18px 16px calc(var(--safe-bottom) + 16px);
+  border-radius: 28px 28px 0 0;
+  background: var(--bg);
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.2);
+  animation: slide-up 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.05);
+}
+
+.topic-picker-title {
+  margin: 0 4px 12px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.topic-picker-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.topic-picker-auto,
+.topic-picker-cancel {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink-soft);
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -191,11 +314,10 @@ button {
 }
 
 .grid-item {
-  display: grid;
-  place-items: center;
+  position: relative;
+  display: block;
   width: 100%;
   height: 100%;
-  padding: 6px;
   border: 0;
   background: none;
   transform: rotate(var(--tilt));
@@ -212,9 +334,12 @@ button {
   }
 }
 
+/* Positioned so a sticker's natural size can never stretch its square cell (or the page). */
 .grid-item img {
-  max-width: 100%;
-  max-height: 100%;
+  position: absolute;
+  inset: 6px;
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
   object-fit: contain;
   filter: var(--sticker-shadow);
   -webkit-touch-callout: none;

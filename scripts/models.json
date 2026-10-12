@@ -1,0 +1,22 @@
+{
+  "cutout": {
+    "file": "magic-touch-v2-int8-1.task",
+    "url": "https://storage.googleapis.com/mediapipe-models/interactive_segmenter_v2/magic_touch/int8/1/interactive_segmentation.task",
+    "sha256": "38431bc66b883404e8397f74c3579404315b9b52b04a46c6346fe906a7309b03"
+  },
+  "classifier": {
+    "file": "efficientnet-lite2-int8-1.tflite",
+    "url": "https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite2/int8/1/efficientnet_lite2.tflite",
+    "sha256": "7fc3a7dbc1cd2833b162a54577afb47ab531d9c4b799ef11d90a4c56fe4ed5ad"
+  },
+  "embedder": {
+    "file": "mobilenet-v3-small-1.tflite",
+    "url": "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite",
+    "sha256": "bbbb4c51a55a53905af1daec995ca1aae355046f8839bb8c9f5ce9271394bc40"
+  },
+  "face": {
+    "file": "blaze-face-short-range-1.tflite",
+    "url": "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+    "sha256": "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f"
+  }
+}
