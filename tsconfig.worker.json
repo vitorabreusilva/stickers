@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "files": ["src/cutout.worker.ts", "src/globals.d.ts"]
+  "include": ["src/workers", "src/globals.d.ts"]
 }

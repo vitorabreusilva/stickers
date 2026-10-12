@@ -1,12 +1,11 @@
 // Runs the background-removal model off the main thread so the UI stays responsive.
 
 import { InteractiveSegmenter, type BrushMode } from '@mediapipe/tasks-vision'
-import wasmLoaderSource from '@mediapipe/tasks-vision/vision_wasm_internal.js?raw'
-import wasmBinaryUrl from '@mediapipe/tasks-vision/vision_wasm_internal.wasm?url'
-import type { CutoutReply, CutoutRequest } from './lib/cutout-protocol'
-import { refineMask } from './lib/mask'
+import type { CutoutReply, CutoutRequest } from '../lib/cutout-protocol'
+import { refineMask } from '../lib/mask'
+import { fetchAsset, modelUrl, pruneAssets, visionRuntime } from './vision-runtime'
 
-declare const self: DedicatedWorkerGlobalScope & { ModuleFactory?: unknown }
+declare const self: DedicatedWorkerGlobalScope
 
 // BrushMode only exists as a type in the published bundle. POSITIVE marks a point on the object,
 // LASSO says "the object inside this loop".
@@ -14,9 +13,6 @@ const POSITIVE = 1 as BrushMode
 const LASSO = 3 as BrushMode
 // A mask covering nearly everything means the model picked the background, not a subject.
 const MAX_COVERAGE = 0.9
-const MODEL_URL = new URL(`${import.meta.env.BASE_URL}${__CUTOUT_MODEL__}`, self.location.origin).href
-const WASM_URL = new URL(wasmBinaryUrl, self.location.origin).href
-const ASSET_CACHE = 'cutout-assets'
 
 type Delegate = 'GPU' | 'CPU'
 
@@ -32,50 +28,10 @@ const listeners = new Set<(fraction: number) => void>()
 
 const post = (reply: CutoutReply, transfer: Transferable[] = []) => self.postMessage(reply, transfer)
 
-/** Fetches a file once and keeps it in Cache Storage, so later sessions (and offline use) skip the download. */
-async function fetchAsset(url: string): Promise<Uint8Array<ArrayBuffer>> {
-  const cache = await caches.open(ASSET_CACHE).catch(() => null)
-  const cached = await cache?.match(url)
-  if (cached) {
-    const bytes = new Uint8Array(await cached.arrayBuffer())
-    progress(bytes.byteLength)
-    return bytes
-  }
-
-  const response = await fetch(url)
-  if (!response.ok || !response.body) throw new Error(`Download failed (${response.status})`)
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    chunks.push(value)
-    size += value.byteLength
-    progress(value.byteLength)
-  }
-  const bytes = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  await cache?.put(url, new Response(bytes, { headers: { 'Content-Type': 'application/octet-stream' } })).catch(() => {})
-  return bytes
-}
-
 function progress(bytes: number) {
   downloaded += bytes
   const fraction = __CUTOUT_BYTES__ > 0 ? Math.min(0.99, downloaded / __CUTOUT_BYTES__) : 0
   listeners.forEach((listener) => listener(fraction))
-}
-
-/** Drops cached copies of older model/runtime versions. */
-async function pruneCache() {
-  const cache = await caches.open(ASSET_CACHE)
-  for (const request of await cache.keys()) {
-    if (request.url !== MODEL_URL && request.url !== WASM_URL) await cache.delete(request)
-  }
 }
 
 /** Software WebGL is far slower than the CPU path, so only use the GPU when it's a real one. */
@@ -93,27 +49,14 @@ function hasRealGpu(): boolean {
   }
 }
 
-/**
- * MediaPipe's wasm loader is a classic script that defines a global `ModuleFactory`. Module workers
- * can't importScripts() it, so evaluate it here; MediaPipe then skips loading it when given no path.
- * It clears the global after each use, so this runs before every task creation.
- */
-function installModuleFactory() {
-  self.ModuleFactory = new Function(`${wasmLoaderSource}\nreturn ModuleFactory`)()
-}
-
 function loadSegmenter() {
   segmenter ??= (async (): Promise<Engine> => {
-    const [wasm, model] = await Promise.all([fetchAsset(WASM_URL), fetchAsset(MODEL_URL)])
-    pruneCache().catch(() => {})
-    const wasmBinaryPath = URL.createObjectURL(new Blob([wasm], { type: 'application/wasm' }))
-    const create = (delegate: Delegate) => {
-      installModuleFactory()
-      return InteractiveSegmenter.createFromOptions(
-        { wasmLoaderPath: '', wasmBinaryPath },
-        { baseOptions: { modelAssetBuffer: model, delegate } },
-      )
-    }
+    const [, model] = await Promise.all([visionRuntime(progress), fetchAsset(modelUrl('cutout'), progress)])
+    pruneAssets().catch(() => {})
+    const create = async (delegate: Delegate) =>
+      InteractiveSegmenter.createFromOptions(await visionRuntime(), {
+        baseOptions: { modelAssetBuffer: model, delegate },
+      })
 
     if (hasRealGpu()) {
       try {

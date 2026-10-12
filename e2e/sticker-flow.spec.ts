@@ -172,3 +172,34 @@ test('background removal keeps the subject and drops the background', async ({ p
   await removeBg.click()
   await expect.poll(() => skyFraction(page), { timeout: 5_000 }).toBeLessThan(0.01)
 })
+
+test('stickers get sorted into topics, and can be moved by hand', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('stickers.removeBackground', 'off'))
+  await page.goto('/')
+  await openPicture(page)
+  await drawLoop(page)
+  await page.getByRole('button', { name: 'Cut sticker' }).click()
+  await page.getByRole('dialog', { name: 'Sticker preview' }).getByRole('button', { name: 'Add to collection' }).click()
+
+  // The on-device analysis files it under some topic in the background.
+  await page.getByRole('button', { name: 'Open sticker' }).click()
+  const detail = page.getByRole('dialog', { name: 'Sticker' })
+  const pill = detail.locator('.topic-pill')
+  await expect(pill).not.toContainText('Sorting', { timeout: 60_000 })
+
+  await pill.click()
+  await detail.getByRole('dialog', { name: 'Move to topic' }).getByRole('button', { name: /Music/ }).click()
+  await expect(pill).toContainText('Music')
+  await expect(pill).toContainText('your pick')
+
+  // The choice is saved.
+  await page.reload()
+  await page.getByRole('button', { name: 'Open sticker' }).click()
+  await expect(page.locator('.topic-pill')).toContainText('Music')
+
+  // And can be handed back to the app.
+  await page.locator('.topic-pill').click()
+  await page.getByRole('button', { name: 'Let the app decide' }).click()
+  await expect(page.locator('.topic-pill')).not.toContainText('your pick')
+})

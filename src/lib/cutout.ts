@@ -48,7 +48,7 @@ const jobs = new Map<number, Job>()
 
 function getWorker(): Worker {
   if (worker) return worker
-  const w = new Worker(new URL('../cutout.worker.ts', import.meta.url), { type: 'module' })
+  const w = new Worker(new URL('../workers/cutout.worker.ts', import.meta.url), { type: 'module' })
   w.onmessage = ({ data }: MessageEvent<CutoutReply>) => {
     const job = jobs.get(data.id)
     if (!job) return

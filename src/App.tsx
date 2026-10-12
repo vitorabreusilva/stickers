@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Collection } from './components/Collection'
 import { LassoEditor } from './components/LassoEditor'
 import { StickerDetail } from './components/StickerDetail'
@@ -9,6 +9,8 @@ import { canReadClipboard, firstImageFile, readClipboardImage, takeSharedImage }
 import type { Point } from './lib/geometry'
 import { loadImage, type LoadedImage } from './lib/image'
 import type { StickerImage } from './lib/sticker'
+import { assignTopics } from './lib/topics'
+import { useAutoAnalysis } from './hooks/useAutoAnalysis'
 import { useNavStack } from './hooks/useNavStack'
 import { useStickers } from './hooks/useStickers'
 import { useToast } from './hooks/useToast'
@@ -20,7 +22,10 @@ type Screen =
 
 export function App() {
   const { stack, push, back, home } = useNavStack<Screen>()
-  const { stickers, add, remove } = useStickers()
+  const { stickers, add, remove, update } = useStickers()
+  // Sort stickers into topics in the background, and regroup whenever anything changes.
+  const sorting = useAutoAnalysis(stickers, update)
+  const topics = useMemo(() => assignTopics(stickers ?? []), [stickers])
   const [toast, showToast] = useToast()
   const [freshId, setFreshId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -95,6 +100,8 @@ export function App() {
     <>
       <Collection
         stickers={stickers}
+        topics={topics}
+        sorting={sorting}
         freshId={freshId}
         canPaste={canReadClipboard()}
         onImage={openImage}
@@ -122,8 +129,10 @@ export function App() {
               <StickerDetail
                 key={i}
                 sticker={sticker}
+                topic={topics.get(sticker.id)}
                 onClose={back}
                 toast={showToast}
+                onTopic={(topic) => update(sticker.id, { topic: topic ?? undefined })}
                 onDelete={async () => {
                   await remove(sticker.id)
                   back()

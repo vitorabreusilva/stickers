@@ -26,12 +26,12 @@ jobs:
           node-version: 22
           cache: npm
 
-      # The cutout model (~30 MB) isn't in git; scripts/fetch-model.mjs downloads it before the build.
-      - name: Cache cutout model
+      # The on-device models (~42 MB) aren't in git; scripts/fetch-models.mjs downloads them before the build.
+      - name: Cache models
         uses: actions/cache@v4
         with:
           path: public/models
-          key: cutout-model-${{ hashFiles('scripts/fetch-model.mjs') }}
+          key: models-${{ hashFiles('scripts/models.json') }}
 
       - run: npm ci
       - run: npm run typecheck

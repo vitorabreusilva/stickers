@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/fetch-model.mjs",
+    "predev": "node scripts/fetch-models.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/fetch-model.mjs",
+    "prebuild": "node scripts/fetch-models.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.sw.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.node.json",

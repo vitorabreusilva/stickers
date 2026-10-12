@@ -63,12 +63,25 @@ describe('addOutline', () => {
     expect(alphaAt(out, w, 10, 10)).toBe(0)
   })
 
-  it('fills holes enclosed by the sticker', () => {
+  it('keeps big enclosed gaps open, like the space between legs', () => {
+    const w = 80
+    const h = 80
+    const data = redRect(w, h, 10, 10, 70, 70)
+    // A 30x30 transparent gap fully enclosed by the subject.
+    for (let y = 25; y < 55; y++) for (let x = 25; x < 55; x++) data[(y * w + x) * 4 + 3] = 0
+    const out = addOutline(data, w, h, 3)
+    expect(alphaAt(out, w, 40, 40)).toBe(0)
+    // The border still runs around the gap's edge.
+    expect(rgbAt(out, w, 26, 40)).toEqual([255, 255, 255])
+    expect(alphaAt(out, w, 26, 40)).toBe(255)
+  })
+
+  it('fills enclosed gaps too small to cut out', () => {
     const w = 60
     const h = 60
     const data = redRect(w, h, 10, 10, 50, 50)
-    // Punch a 20x20 transparent hole in the middle.
-    for (let y = 20; y < 40; y++) for (let x = 20; x < 40; x++) data[(y * w + x) * 4 + 3] = 0
+    // A 10x10 gap: after a 3px border on each side only a sliver is left.
+    for (let y = 25; y < 35; y++) for (let x = 25; x < 35; x++) data[(y * w + x) * 4 + 3] = 0
     const out = addOutline(data, w, h, 3)
     expect(alphaAt(out, w, 30, 30)).toBe(255)
     expect(rgbAt(out, w, 30, 30)).toEqual([255, 255, 255])
