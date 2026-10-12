@@ -3,6 +3,8 @@ import {
   AI_ENGINES,
   AI_QUALITIES,
   engineById,
+  hasKey,
+  onServer,
   priceLabel,
   PROVIDERS,
   saveAiSettings,
@@ -25,6 +27,7 @@ export function AiSettingsSheet({ settings, onSave, onClose }: Props) {
   const engine = engineById(draft.engine)
   const provider = PROVIDERS[engine.provider]
   const key = draft.keys[engine.provider]
+  const serverKey = onServer(draft, engine)
   const [advanced, setAdvanced] = useState(!!draft.models[engine.id])
 
   const update = (patch: Partial<AiSettings>) => setDraft({ ...draft, ...patch })
@@ -45,14 +48,16 @@ export function AiSettingsSheet({ settings, onSave, onClose }: Props) {
         </header>
 
         <p className="ai-sheet-intro">
-          An AI image model redraws your sticker as clean, professional line art. It uses your own account
-          with the model&rsquo;s provider, so you pay them per page. Keys stay on this device, and only the
-          sticker you&rsquo;re drawing is sent.
+          An AI image model redraws your sticker as clean, professional line art.{' '}
+          {draft.server
+            ? 'Models marked “Ready” use the app’s own account. The others need your own key with the model’s provider, kept on this device.'
+            : 'It uses your own account with the model’s provider, so you pay them per page. Keys stay on this device.'}{' '}
+          Only the sticker you&rsquo;re drawing is sent.
         </p>
 
         <div className="ai-engines" role="radiogroup" aria-label="Model">
           {AI_ENGINES.map((e) => {
-            const ready = !!draft.keys[e.provider].trim()
+            const ready = hasKey(draft, e)
             const price = priceLabel(draft, e)
             return (
               <button
@@ -67,7 +72,7 @@ export function AiSettingsSheet({ settings, onSave, onClose }: Props) {
               >
                 <span className="ai-engine-name">
                   {e.name}
-                  {ready && <span className="ai-engine-ready">Key added</span>}
+                  {ready && <span className="ai-engine-ready">{onServer(draft, e) ? 'Ready' : 'Key added'}</span>}
                 </span>
                 <span className="ai-engine-blurb">{e.blurb}</span>
                 {price && <span className="ai-engine-price">{price} a page</span>}
@@ -76,24 +81,30 @@ export function AiSettingsSheet({ settings, onSave, onClose }: Props) {
           })}
         </div>
 
-        <label className="ai-field">
-          <span>{provider.name} API key</span>
-          <input
-            type="password"
-            value={key}
-            onChange={(e) => update({ keys: { ...draft.keys, [engine.provider]: e.target.value } })}
-            placeholder={provider.keyHint}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </label>
-        <p className="ai-hint">
-          Create one at{' '}
-          <a href={provider.keyUrl} target="_blank" rel="noreferrer">
-            {provider.keyUrl.replace('https://', '')}
-          </a>
-          . {provider.note}
-        </p>
+        {serverKey ? (
+          <p className="ai-hint">The app has its own {provider.name} key, so there&rsquo;s nothing to add here.</p>
+        ) : (
+          <>
+            <label className="ai-field">
+              <span>{provider.name} API key</span>
+              <input
+                type="password"
+                value={key}
+                onChange={(e) => update({ keys: { ...draft.keys, [engine.provider]: e.target.value } })}
+                placeholder={provider.keyHint}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            <p className="ai-hint">
+              Create one at{' '}
+              <a href={provider.keyUrl} target="_blank" rel="noreferrer">
+                {provider.keyUrl.replace('https://', '')}
+              </a>
+              . {provider.note}
+            </p>
+          </>
+        )}
 
         {engine.provider === 'openai' && (
           <div className="segmented ai-quality" role="radiogroup" aria-label="Quality">
@@ -123,12 +134,12 @@ export function AiSettingsSheet({ settings, onSave, onClose }: Props) {
         )}
 
         <div className="sheet-actions">
-          {settings.keys[engine.provider] && (
+          {settings.keys[engine.provider] && !serverKey && (
             <button className="btn btn-secondary" onClick={() => save({ ...draft, keys: { ...draft.keys, [engine.provider]: '' } })}>
               Remove key
             </button>
           )}
-          <button className="btn btn-primary" onClick={() => save(draft)} disabled={!key.trim()}>
+          <button className="btn btn-primary" onClick={() => save(draft)} disabled={!serverKey && !key.trim()}>
             Save
           </button>
         </div>

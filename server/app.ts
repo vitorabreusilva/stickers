@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import type { AccountInfo } from '../src/lib/sync-protocol.js'
+import { aiRoutes } from './ai.js'
 import { getAuth, type Auth } from './auth.js'
 import { isAllowed } from './env.js'
 import { syncRoutes, type SignedIn } from './sync.js'
@@ -27,6 +28,7 @@ export function createApp(auth: () => Auth = getAuth) {
   })
 
   app.route('/', syncRoutes)
+  app.route('/', aiRoutes)
 
   app.onError((err, c) => {
     console.error(err)

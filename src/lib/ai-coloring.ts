@@ -1,6 +1,8 @@
 // Coloring pages drawn by an AI image model: the sticker goes in, clean line art comes out.
 // Several models from four providers are offered, since each refuses or struggles with
-// different pictures. They use the person's own API keys, kept on their device.
+// different pictures. When signed in, they're drawn through our server with the app's keys
+// (Vercel environment variables, see SERVER_KEYS); otherwise with the person's own keys, kept
+// on their device. The drawing code below runs in both places.
 
 import type { ColoringDetail } from './coloring'
 
@@ -33,6 +35,14 @@ export const PROVIDERS: Record<AiProvider, { name: string; keyUrl: string; keyHi
     keyHint: 'Your QuiverAI API key',
     note: 'Sign in, then create a key under API keys. Arrow 2 is priced by how much drawing it produces.',
   },
+}
+
+/** The environment variable holding each provider's key on the server. */
+export const SERVER_KEYS: Record<AiProvider, string> = {
+  openai: 'OPENAI_API_KEY',
+  google: 'GEMINI_API_KEY',
+  fal: 'FAL_KEY',
+  quiver: 'QUIVER_API_KEY',
 }
 
 export interface AiEngine {
@@ -72,6 +82,13 @@ export interface AiSettings {
   models: Record<string, string>
   /** OpenAI only. */
   quality: AiQuality
+  /** Where the server draws, and which providers it has keys for. Learned each time, never saved. */
+  server?: AiServer
+}
+
+export interface AiServer {
+  url: string
+  providers: AiProvider[]
 }
 
 const STORE = 'stickers.ai'
@@ -113,8 +130,9 @@ export function loadAiSettings(): AiSettings {
 }
 
 export function saveAiSettings(settings: AiSettings) {
+  const { server: _server, ...rest } = settings
   const clean: AiSettings = {
-    ...settings,
+    ...rest,
     keys: Object.fromEntries(Object.entries(settings.keys).map(([p, k]) => [p, k.trim()])) as AiSettings['keys'],
     models: Object.fromEntries(Object.entries(settings.models).filter(([, m]) => m.trim()).map(([id, m]) => [id, m.trim()])),
   }
@@ -131,8 +149,11 @@ export function saveAiSettings(settings: AiSettings) {
 /** The model an engine will use with these settings. */
 export const engineModel = (settings: AiSettings, engine: AiEngine) => settings.models[engine.id] || engine.model
 
-/** Whether the engine's provider has a key. */
-export const hasKey = (settings: AiSettings, engine: AiEngine) => !!settings.keys[engine.provider].trim()
+/** Whether the server has a key for the engine's provider. */
+export const onServer = (settings: AiSettings, engine: AiEngine) => !!settings.server?.providers.includes(engine.provider)
+
+/** Whether the engine can draw: the server has a key for its provider, or this device does. */
+export const hasKey = (settings: AiSettings, engine: AiEngine) => onServer(settings, engine) || !!settings.keys[engine.provider].trim()
 
 /** "about $0.05", or null when the model's price isn't known. */
 export function priceLabel(settings: AiSettings, engine = engineById(settings.engine)): string | null {
@@ -190,12 +211,20 @@ export class AiError extends Error {
 
 const REFUSAL = /safety|moderation|content policy|prohibited|blocked|refus|copyright|not allowed|policy/
 
+/** Whose key a request used: the person's own, or the server's. */
+export type KeySource = 'device' | 'server'
+
 /** A message a person can act on, from a provider's error response. */
-export function describeAiError(provider: AiProvider, status: number, message: string): AiError {
+export function describeAiError(provider: AiProvider, status: number, message: string, source: KeySource = 'device'): AiError {
   const name = PROVIDERS[provider].name
   const text = message.toLowerCase()
   if (status === 401 || text.includes('api key not valid') || text.includes('invalid api key') || text.includes('incorrect api key'))
-    return new AiError(`${name} rejected the API key. Check it in AI settings.`, 'key')
+    return new AiError(
+      source === 'server'
+        ? `${name} rejected the app's API key. Check ${SERVER_KEYS[provider]} in the Vercel project's settings.`
+        : `${name} rejected the API key. Check it in AI settings.`,
+      'key',
+    )
   if (provider === 'openai' && text.includes('verif') && text.includes('organization'))
     return new AiError(
       'OpenAI needs your organization verified before it can use image models. Do it at platform.openai.com → Settings → Organization, then try again.',
@@ -205,7 +234,8 @@ export function describeAiError(provider: AiProvider, status: number, message: s
     return new AiError(`Your ${name} account is out of credit, or billing isn’t set up for it.`, 'key')
   if (status === 429) return new AiError(`${name} is busy right now. Wait a minute and try again.`)
   if (REFUSAL.test(text)) return new AiError(`${name} declined to draw this sticker.`, 'refused')
-  if (status === 403) return new AiError(`${name} didn’t allow this request. Check the key’s permissions in AI settings.`, 'key')
+  if (status === 403)
+    return new AiError(`${name} didn’t allow this request. Check the key’s permissions${source === 'server' ? '' : ' in AI settings'}.`, 'key')
   if (status === 404 || (text.includes('model') && (text.includes('does not exist') || text.includes('not found'))))
     return new AiError(`That model isn’t available on your ${name} account. Pick another in AI settings.`, 'key')
   if (status >= 500) return new AiError(`${name} had a problem. Try again in a moment.`)
@@ -224,7 +254,7 @@ async function post(provider: AiProvider, url: string, init: RequestInit, signal
     const name = PROVIDERS[provider].name
     if (err instanceof DOMException && err.name === 'TimeoutError')
       throw new AiError(`${name} took too long to answer. Try again, or pick another model.`)
-    if (!navigator.onLine) throw new AiError('Drawing with AI needs an internet connection.')
+    if (globalThis.navigator?.onLine === false) throw new AiError('Drawing with AI needs an internet connection.')
     // Browsers report a blocked cross-site request the same way as a dropped connection.
     throw new AiError(`Couldn't reach ${name}. Try again in a moment; if it keeps failing, pick another model.`)
   }
@@ -245,13 +275,14 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary)
 }
 
-interface Job {
+export interface Job {
   image: Blob
   size: AiSize
   prompt: string
   model: string
   key: string
   quality: AiQuality
+  source?: KeySource
   signal?: AbortSignal
 }
 
@@ -273,7 +304,7 @@ async function drawWithOpenAi(job: Job): Promise<Blob> {
   let response = await send(true)
   if (response.status === 400 && (await response.clone().text()).includes('input_fidelity')) response = await send(false)
   const body = await readJson<{ data?: { b64_json?: string }[]; error?: { message?: string } }>(response)
-  if (!response.ok) throw describeAiError('openai', response.status, body?.error?.message ?? '')
+  if (!response.ok) throw describeAiError('openai', response.status, body?.error?.message ?? '', job.source)
   const b64 = body?.data?.[0]?.b64_json
   if (!b64) throw new AiError('OpenAI sent back no picture. Try again.')
   return base64ToBlob(b64)
@@ -297,7 +328,7 @@ async function drawWithGemini(job: Job): Promise<Blob> {
     promptFeedback?: { blockReason?: string }
     error?: { message?: string }
   }>(response)
-  if (!response.ok) throw describeAiError('google', response.status, body?.error?.message ?? '')
+  if (!response.ok) throw describeAiError('google', response.status, body?.error?.message ?? '', job.source)
   if (body?.promptFeedback?.blockReason) throw new AiError('Google declined to draw this sticker.', 'refused')
   const candidate = body?.candidates?.[0]
   const image = candidate?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData
@@ -333,7 +364,7 @@ async function drawWithFal(job: Job): Promise<Blob> {
   }>(response)
   if (!response.ok) {
     const detail = typeof body?.detail === 'string' ? body.detail : (body?.detail?.map((d) => d.msg).join('; ') ?? body?.error ?? '')
-    throw describeAiError('fal', response.status, detail)
+    throw describeAiError('fal', response.status, detail, job.source)
   }
   if (body?.has_nsfw_concepts?.[0]) throw new AiError('fal.ai’s safety filter blocked this drawing.', 'refused')
   const url = body?.images?.[0]?.url
@@ -369,14 +400,14 @@ async function drawWithQuiver(job: Job): Promise<Blob> {
   const body = await readJson<{ data?: { svg?: string }[]; error?: { message?: string } | string; message?: string }>(response)
   if (!response.ok) {
     const message = typeof body?.error === 'string' ? body.error : (body?.error?.message ?? body?.message ?? '')
-    throw describeAiError('quiver', response.status, message)
+    throw describeAiError('quiver', response.status, message, job.source)
   }
   const svg = body?.data?.[0]?.svg
   if (!svg || !svg.includes('<svg')) throw new AiError('QuiverAI sent back no drawing. Try again.')
   return new Blob([svg], { type: 'image/svg+xml' })
 }
 
-const DRAW: Record<AiProvider, (job: Job) => Promise<Blob>> = {
+export const DRAW: Record<AiProvider, (job: Job) => Promise<Blob>> = {
   openai: drawWithOpenAi,
   google: drawWithGemini,
   fal: drawWithFal,
@@ -395,6 +426,10 @@ export function requestAiLineArt(
   signal?: AbortSignal,
   engine = engineById(settings.engine),
 ): Promise<Blob> {
+  if (settings.server && onServer(settings, engine)) {
+    const request = { engine: engine.id, model: engineModel(settings, engine), size, detail, quality: settings.quality }
+    return drawOnServer(settings.server.url, image, request, signal)
+  }
   return DRAW[engine.provider]({
     image,
     size,
@@ -404,4 +439,39 @@ export function requestAiLineArt(
     quality: settings.quality,
     signal,
   })
+}
+
+/** What the app sends the server to draw, besides the picture. */
+export interface AiDrawRequest {
+  engine: string
+  model: string
+  size: AiSize
+  detail: ColoringDetail
+  quality: AiQuality
+}
+
+/** The server's answer when a drawing fails. */
+export interface AiDrawError {
+  error: string
+  kind: AiErrorKind
+}
+
+async function drawOnServer(url: string, image: Blob, request: AiDrawRequest, signal?: AbortSignal): Promise<Blob> {
+  const form = new FormData()
+  form.append('image', new File([image], 'sticker.png', { type: 'image/png' }))
+  for (const [name, value] of Object.entries(request)) form.append(name, value)
+  // A little longer than the server gives the provider, so its own timeout message gets through.
+  const timeout = AbortSignal.timeout(TIMEOUT + 15_000)
+  let response: Response
+  try {
+    response = await fetch(url, { method: 'POST', body: form, credentials: 'same-origin', signal: signal ? AbortSignal.any([signal, timeout]) : timeout })
+  } catch (err) {
+    if (signal?.aborted) throw err
+    if (globalThis.navigator?.onLine === false) throw new AiError('Drawing with AI needs an internet connection.')
+    throw new AiError('Couldn’t reach the server to draw this. Try again in a moment.')
+  }
+  if (response.ok) return response.blob()
+  if (response.status === 401) throw new AiError('Sign in again to draw with AI.', 'key')
+  const body = await readJson<AiDrawError>(response)
+  throw new AiError(body?.error || `The drawing failed (${response.status}). Try again.`, body?.kind ?? 'other')
 }

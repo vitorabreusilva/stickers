@@ -1,5 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { AI_ENGINES, AiError, engineById, hasKey, loadAiSettings, priceLabel, PROVIDERS, saveAiSettings, type AiErrorKind, type AiSettings } from '../lib/ai-coloring'
+import { api } from '../lib/account'
+import {
+  AI_ENGINES,
+  AiError,
+  engineById,
+  hasKey,
+  loadAiSettings,
+  priceLabel,
+  PROVIDERS,
+  saveAiSettings,
+  type AiErrorKind,
+  type AiProvider,
+  type AiServer,
+  type AiSettings,
+} from '../lib/ai-coloring'
 import { composePage, drawAiColoringArt, drawColoringArt, pagesToPdf, printPages } from '../lib/book-render'
 import { COLORING_DETAILS, type ColoringDetail } from '../lib/coloring'
 import { newId, type BookPageRecord, type BookRecord } from '../lib/db'
@@ -45,6 +59,18 @@ function remember(key: string, value: string) {
     localStorage.setItem(key, value)
   } catch {
     // Not remembering the choice is fine.
+  }
+}
+
+/** Which AI providers the server can draw with for the signed-in person; none when signed out or offline. */
+async function fetchServerAi(): Promise<AiServer | undefined> {
+  try {
+    const response = await fetch(api('ai/providers'), { credentials: 'same-origin' })
+    if (!response.ok) return undefined
+    const { providers } = (await response.json()) as { providers: AiProvider[] }
+    return providers.length ? { url: api('ai/draw'), providers } : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -111,6 +137,16 @@ export function ColoringStudio({ sticker, books, onAdd, onCreateBook, onOpenBook
   }, [sticker.blob, detail, guide, key, aiArt, aiVersion])
 
   useEffect(() => () => aiAbort.current?.abort(), [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchServerAi().then((server) => {
+      if (!cancelled && server) setAi((current) => ({ ...current, server }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   /** Draws with the chosen model, or switches to `other` first (after a refusal). */
   const drawWithAi = (other?: string) => {
@@ -300,7 +336,7 @@ export function ColoringStudio({ sticker, books, onAdd, onCreateBook, onOpenBook
                   <small>
                     {aiReady
                       ? `${aiEngine.name} by ${PROVIDERS[aiEngine.provider].name}${price ? `, ${price} a page` : ''}`
-                      : `Uses your own ${PROVIDERS[aiEngine.provider].name} API key`}
+                      : `Needs a ${PROVIDERS[aiEngine.provider].name} API key`}
                   </small>
                 </p>
               </div>
@@ -429,7 +465,7 @@ export function ColoringStudio({ sticker, books, onAdd, onCreateBook, onOpenBook
         <AiSettingsSheet
           settings={ai}
           onSave={(next) => {
-            setAi(next)
+            setAi({ ...next, server: ai.server })
             setAiError(null)
             setSettingsOpen(false)
           }}

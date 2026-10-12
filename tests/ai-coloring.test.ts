@@ -119,6 +119,39 @@ describe('requestAiLineArt', () => {
     expect(body.instructions).toContain('older children')
   })
 
+  it('draws through the server when it has a key for the provider', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(new Blob(['drawn'], { type: 'image/png' })))
+    vi.stubGlobal('fetch', fetch)
+    const server = { url: '/api/ai/draw', providers: ['google' as const] }
+    const result = await requestAiLineArt(new Blob(['sticker']), '1024x1536', 'simple', { ...settings, engine: 'gemini', server })
+    expect(await result.text()).toBe('drawn')
+    const [url, init] = fetch.mock.calls[0]
+    expect(url).toBe('/api/ai/draw')
+    const form = init.body as FormData
+    expect(Object.fromEntries([...form].filter(([k]) => k !== 'image'))).toEqual({
+      engine: 'gemini',
+      model: 'gemini-3.1-flash-image',
+      size: '1024x1536',
+      detail: 'simple',
+      quality: 'medium',
+    })
+    expect(form.get('image')).toBeInstanceOf(File)
+
+    // Providers the server has no key for still use the device's.
+    fetch.mockResolvedValue(ok({ data: [{ b64_json: btoa('x') }] }))
+    await requestAiLineArt(new Blob(['x']), '1024x1024', 'medium', { ...settings, server })
+    expect(fetch.mock.calls[1][0]).toBe('https://api.openai.com/v1/images/edits')
+  })
+
+  it('passes on the server’s explanation of a failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'Google declined to draw this sticker.', kind: 'refused' }), { status: 502 })))
+    const server = { url: '/api/ai/draw', providers: ['google' as const] }
+    const err = await requestAiLineArt(new Blob(['x']), '1024x1024', 'medium', { ...settings, engine: 'gemini', server }).catch((e) => e)
+    expect(err).toBeInstanceOf(AiError)
+    expect(err.message).toBe('Google declined to draw this sticker.')
+    expect(err.kind).toBe('refused')
+  })
+
   it('uses a model name typed into the settings', async () => {
     const fetch = vi.fn().mockResolvedValue(ok({ candidates: [{ content: { parts: [{ inlineData: { data: btoa('x') } }] } }] }))
     vi.stubGlobal('fetch', fetch)
