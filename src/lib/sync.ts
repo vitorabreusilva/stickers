@@ -8,6 +8,7 @@ import { decodeAnalysis, encodeAnalysis } from './codec'
 import {
   applyRemote,
   clearOutbox,
+  getBook,
   getBookPage,
   getFolder,
   getMeta,
@@ -17,14 +18,16 @@ import {
   queueEverything,
   setMeta,
   type BookPageRecord,
+  type BookRecord,
   type OutboxEntry,
   type RemoteChange,
   type StickerRecord,
 } from './db'
+import { DEFAULT_STYLE, isCoverBackground, isCoverLayout, LEGACY_BOOK_ID } from './books'
 import type { ColoringDetail } from './coloring'
 import type { StickerEffect } from './effects'
 import { isFolderColor, type FolderKey } from './folders'
-import { IMAGE_TYPES, type ImageKind, type SyncPull, type SyncPush, type SyncSticker } from './sync-protocol'
+import { IMAGE_TYPES, type ImageKind, type SyncBook, type SyncPull, type SyncPush, type SyncSticker } from './sync-protocol'
 import type { TopicId } from './topics'
 
 const PUSH_BATCH = 50
@@ -70,6 +73,7 @@ const stickerToSync = (s: StickerRecord): SyncSticker => ({
 
 const pageToSync = (p: BookPageRecord) => ({
   id: p.id,
+  bookId: p.bookId ?? LEGACY_BOOK_ID,
   stickerId: p.stickerId,
   effect: p.effect ?? null,
   detail: p.detail,
@@ -77,12 +81,33 @@ const pageToSync = (p: BookPageRecord) => ({
   createdAt: p.createdAt,
 })
 
+const bookToSync = (b: BookRecord): SyncBook => ({
+  id: b.id,
+  title: b.title,
+  background: b.background,
+  layout: b.layout,
+  createdAt: b.createdAt,
+})
+
+const bookFromSync = (b: SyncBook): BookRecord => ({
+  id: b.id,
+  title: b.title,
+  background: isCoverBackground(b.background) ? b.background : DEFAULT_STYLE.background,
+  layout: isCoverLayout(b.layout) ? b.layout : DEFAULT_STYLE.layout,
+  createdAt: b.createdAt,
+})
+
 /** Sends one batch of the outbox. Returns false once it's empty. */
 async function pushBatch(): Promise<boolean> {
   const entries = (await listOutbox()).slice(0, PUSH_BATCH)
   if (!entries.length) return false
 
-  const body: Required<Omit<SyncPush, 'settings'>> & Pick<SyncPush, 'settings'> = { stickers: [], folders: [], book: [] }
+  const body: Required<Omit<SyncPush, 'settings'>> & Pick<SyncPush, 'settings'> = {
+    stickers: [],
+    folders: [],
+    book: [],
+    books: [],
+  }
   const sent: OutboxEntry[] = []
   for (const entry of entries) {
     if (entry.kind === 'sticker') {
@@ -105,6 +130,9 @@ async function pushBatch(): Promise<boolean> {
         }
         body.book.push(pageToSync(page))
       }
+    } else if (entry.kind === 'book-info') {
+      const book = await getBook(entry.id)
+      body.books.push(book ? bookToSync(book) : { id: entry.id, deleted: true, title: '', background: '', layout: '', createdAt: 0 })
     } else {
       body.settings = { bookTitle: storedBookTitle() }
     }
@@ -172,6 +200,7 @@ async function pullPage(): Promise<boolean> {
       key: p.id,
       record: {
         id: p.id,
+        ...(p.bookId && p.bookId !== LEGACY_BOOK_ID && { bookId: p.bookId }),
         stickerId: p.stickerId,
         detail: p.detail as ColoringDetail,
         position: p.position,
@@ -186,7 +215,10 @@ async function pullPage(): Promise<boolean> {
   const folders = page.folders.flatMap((f) => (isFolderColor(f.color) ? [{ key: f.key as FolderKey, color: f.color }] : []))
   // The title first, so it's in place when the screens reload for the records.
   if (page.settings && !(await hasPending('settings', 'book'))) receiveBookTitle(page.settings.bookTitle)
-  await applyRemote({ stickers, folders, book })
+  const books = (page.books ?? []).map((b) =>
+    b.deleted ? { deleted: true as const, key: b.id } : { key: b.id, record: bookFromSync(b) },
+  )
+  await applyRemote({ stickers, folders, book, books })
   await setMeta('cursor', page.rev)
   return page.more
 }

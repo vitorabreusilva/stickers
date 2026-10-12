@@ -114,7 +114,7 @@ test.describe('with background removal off', () => {
     await expect(page.getByRole('button', { name: 'Open sticker' })).toHaveCount(1)
 
     // The loop was a circle, so the sticker is opaque in the middle and transparent in the corners.
-    const pixels = await stickerAlpha(page, '.grid-item img')
+    const pixels = await stickerAlpha(page, '.latest-item img')
     expect(pixels.width).toBeGreaterThanOrEqual(512)
     expect(pixels.center).toBe(255)
     expect(pixels.corner).toBe(0)
@@ -146,10 +146,10 @@ test.describe('with background removal off', () => {
     await expect(preview.locator('.preview-sticker [data-effect="holo"] .sticker-art-layer').first()).toBeVisible()
     await preview.getByRole('button', { name: 'Add to collection' }).click()
 
-    // Shown with its effect in the grid, and still there after a reload.
-    await expect(page.locator('.grid-item [data-effect="holo"]')).toHaveCount(1)
+    // Shown with its effect among the latest stickers, and still there after a reload.
+    await expect(page.locator('.latest-item [data-effect="holo"]')).toHaveCount(1)
     await page.reload()
-    await expect(page.locator('.grid-item [data-effect="holo"]')).toHaveCount(1)
+    await expect(page.locator('.latest-item [data-effect="holo"]')).toHaveCount(1)
 
     await page.getByRole('button', { name: 'Open sticker' }).click()
     const detail = page.getByRole('dialog', { name: 'Sticker' })
@@ -176,7 +176,7 @@ test.describe('with background removal off', () => {
     await picker.getByRole('button', { name: 'Done' }).click()
     await expect(detail.locator('.detail-sticker [data-effect="chrome"]')).toBeVisible()
     await page.reload()
-    await expect(page.locator('.grid-item [data-effect="chrome"]')).toHaveCount(1)
+    await expect(page.locator('.latest-item [data-effect="chrome"]')).toHaveCount(1)
   })
 
   test('whole picture option and the back button', async ({ page }) => {
@@ -456,8 +456,9 @@ test.describe('coloring book', () => {
     await expect(preview).toHaveAttribute('data-engine', 'ai')
     expect(google).toHaveLength(1)
 
+    // With no books yet, the first page starts one.
     await studio.getByRole('button', { name: 'Add to book' }).click()
-    await expect(page.getByText('Added to your coloring book!')).toBeVisible()
+    await expect(page.getByText('Added to My Coloring Book!')).toBeVisible()
   })
 
   test('a vector model draws SVG, rendered sharp at print size', async ({ page }) => {
@@ -547,31 +548,111 @@ test.describe('coloring book', () => {
     expect(singlePdf).toContain('/MediaBox [0 0 419.53 595.28]')
 
     await studio.getByRole('button', { name: 'Add to book' }).click()
-    await expect(page.getByText('Added to your coloring book!')).toBeVisible()
+    await expect(page.getByText('Added to My Coloring Book!')).toBeVisible()
     await studio.getByRole('button', { name: 'Open book' }).click()
 
+    // One page makes a whole booklet: the four sides of the cover, the page, and three blanks.
     const book = page.getByRole('dialog', { name: 'Coloring book' })
-    await expect(book.getByRole('img', { name: 'Page 1' })).toBeVisible()
+    await expect(book.getByRole('img', { name: 'Page 1', exact: true })).toBeVisible({ timeout: 20_000 })
     await expect(book.getByTestId('book-cover')).toBeVisible({ timeout: 20_000 })
+    await expect(book.getByText('8 pages to print')).toBeVisible()
+    await expect(book.getByRole('img', { name: 'Page 4, blank' })).toBeVisible({ timeout: 20_000 })
+    await expect(book.getByRole('img', { name: 'Back cover', exact: true })).toBeVisible({ timeout: 20_000 })
     await book.getByLabel('Title').fill('Sunny Days')
+    await book.getByRole('radiogroup', { name: 'Cover colour' }).getByRole('radio', { name: 'Night' }).click()
+    await book.getByRole('radio', { name: 'Spotlight' }).click()
+    await expect(book.getByRole('radio', { name: 'Spotlight' })).toHaveAttribute('aria-checked', 'true')
 
-    const download = page.waitForEvent('download')
-    await book.getByRole('button', { name: 'Save PDF' }).click()
-    const file = await download
+    // The page has no "Colored by" line any more, but a page number at the outside of the foot.
+    const pageArt = await book.getByRole('img', { name: 'Page 1', exact: true }).evaluate(async (img: HTMLImageElement) => {
+      await img.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      const dark = (x0: number, y0: number, x1: number, y1: number) => {
+        const { data } = ctx.getImageData(x0, y0, x1 - x0, y1 - y0)
+        let n = 0
+        for (let i = 0; i < data.length; i += 4) if (data[i] < 128) n++
+        return n
+      }
+      const { width: w, height: h } = canvas
+      // Footer left of the colour guide, then the page number's corner (page 1 is a right-hand page).
+      return { footer: dark(0, h * 0.88, w * 0.7, h * 0.93), folio: dark(w * 0.85, h * 0.95, w, h) }
+    })
+    expect(pageArt.footer).toBe(0)
+    expect(pageArt.folio).toBeGreaterThan(0)
+
+    // Leaf through it, one page at a time on a phone.
+    await book.getByRole('button', { name: 'Preview', exact: true }).click()
+    const viewer = page.getByRole('dialog', { name: 'Book preview' })
+    await expect(viewer.getByText('Cover', { exact: true })).toBeVisible()
+    await viewer.getByRole('button', { name: 'Next' }).click()
+    await expect(viewer.getByText('Inside cover', { exact: true })).toBeVisible()
+    await viewer.getByRole('button', { name: 'Next' }).click()
+    await expect(viewer.getByRole('img', { name: 'Page 1' })).toBeVisible()
+    await expect(viewer.getByText('3 / 8')).toBeVisible()
+    await page.goBack()
+    await expect(viewer).toBeHidden()
+
+    await book.getByRole('button', { name: 'Print or save' }).click()
+    const exportSheet = page.getByRole('dialog', { name: 'Print or save' })
+    let download = page.waitForEvent('download')
+    await exportSheet.getByRole('button', { name: /^Save PDF/ }).click()
+    let file = await download
     expect(file.suggestedFilename()).toBe('sunny-days.pdf')
-    const pdf = await readFile((await file.path())!, 'latin1')
-    // A colour cover (JPEG) and one greyscale page.
-    expect(pdf).toContain('/Count 2')
-    expect(pdf).toContain('/DCTDecode')
+    let pdf = await readFile((await file.path())!, 'latin1')
+    // Colour covers (JPEG), the page in colour for its colour guide, and greyscale for the rest.
+    expect(pdf).toContain('/Count 8')
+    expect(pdf.match(/\/DCTDecode/g)).toHaveLength(2)
     expect(pdf).toContain('/DeviceGray')
+    expect(pdf.match(/\/MediaBox \[0 0 419\.53 595\.28\]/g)).toHaveLength(8)
 
-    // The book is kept, and the home screen links to it.
+    // The booklet: two pages on each side of two A4 sheets.
+    await book.getByRole('button', { name: 'Print or save' }).click()
+    download = page.waitForEvent('download')
+    await exportSheet.getByRole('button', { name: /^Booklet PDF/ }).click()
+    file = await download
+    expect(file.suggestedFilename()).toBe('sunny-days-booklet.pdf')
+    pdf = await readFile((await file.path())!, 'latin1')
+    expect(pdf).toContain('/Count 4')
+    expect(pdf.match(/\/MediaBox \[0 0 841\.89 595\.28\]/g)).toHaveLength(4)
+
+    // The book is kept, on the home screen's shelf.
     await page.reload()
-    await expect(page.getByRole('button', { name: 'Coloring book, 1 pages' })).toBeVisible()
-    await page.getByRole('button', { name: 'Coloring book, 1 pages' }).click()
+    const shelf = page.getByRole('list', { name: 'Coloring books' })
+    await expect(shelf.getByRole('button', { name: 'Sunny Days, 1 page' })).toBeVisible()
+
+    // A second book; new pages then ask which book they go in.
+    await shelf.getByRole('button', { name: 'New book' }).click()
+    await expect(book.getByLabel('Title')).toHaveValue('My Coloring Book')
+    await book.getByLabel('Title').fill('Holiday')
+    await expect(book.getByText('No pages yet')).toBeVisible()
+    await page.goBack()
+    await expect(shelf.getByRole('button', { name: 'Holiday, 0 pages' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Open sticker' }).click()
+    await page.getByRole('dialog', { name: 'Sticker' }).getByRole('button', { name: 'Color' }).click()
+    await studio.getByRole('radio', { name: 'Free' }).click()
+    await expect(studio.getByRole('button', { name: 'Add to book' })).toBeEnabled({ timeout: 20_000 })
+    await studio.getByRole('button', { name: 'Add to book' }).click()
+    const picker = page.getByRole('dialog', { name: 'Add to which book?' })
+    await picker.getByRole('button', { name: /^Holiday/ }).click()
+    await expect(page.getByText('Added to Holiday!')).toBeVisible()
+    await studio.getByRole('button', { name: 'Open book' }).click()
+    await expect(book.getByLabel('Title')).toHaveValue('Holiday')
     await book.getByRole('button', { name: 'Remove page 1' }).click()
     await book.getByRole('button', { name: 'Really remove page 1?' }).click()
     await expect(book.getByText('No pages yet')).toBeVisible()
+
+    // Deleting a book takes its pages with it.
+    await book.getByRole('button', { name: 'Delete book' }).click()
+    await book.getByRole('button', { name: 'Really delete this book?' }).click()
+    await expect(page.getByText('Deleted Holiday')).toBeVisible()
+    await page.goBack()
+    await page.goBack()
+    await expect(shelf.getByRole('listitem')).toHaveCount(2)
   })
 })
 

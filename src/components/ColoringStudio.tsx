@@ -2,17 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { AI_ENGINES, AiError, engineById, hasKey, loadAiSettings, priceLabel, PROVIDERS, saveAiSettings, type AiErrorKind, type AiSettings } from '../lib/ai-coloring'
 import { composePage, drawAiColoringArt, drawColoringArt, pagesToPdf, printPages } from '../lib/book-render'
 import { COLORING_DETAILS, type ColoringDetail } from '../lib/coloring'
-import { newId, type BookPageRecord } from '../lib/db'
+import { newId, type BookPageRecord, type BookRecord } from '../lib/db'
 import { downloadBlob } from '../lib/device'
 import { canvasToBlob } from '../lib/image'
+import type { Book } from '../hooks/useColoringBooks'
 import type { Sticker } from '../hooks/useStickers'
 import { AiSettingsSheet } from './AiSettingsSheet'
-import { BackIcon, BookIcon, DownloadIcon, PrintIcon, SparkleIcon } from './icons'
+import { pageCount } from './BookCard'
+import { BackIcon, BookIcon, CloseIcon, DownloadIcon, PlusIcon, PrintIcon, SparkleIcon } from './icons'
 
 interface Props {
   sticker: Sticker
-  onAdd: (page: Omit<BookPageRecord, 'position'>) => Promise<void>
-  onOpenBook: () => void
+  /** The coloring books, newest first; null while loading. */
+  books: Book[] | null
+  onAdd: (bookId: string, page: Omit<BookPageRecord, 'position' | 'bookId'>) => Promise<void>
+  onCreateBook: () => Promise<BookRecord>
+  onOpenBook: (id: string) => void
   onClose: () => void
   toast: (message: string) => void
 }
@@ -43,8 +48,8 @@ function remember(key: string, value: string) {
   }
 }
 
-/** Turns a sticker into an A5 coloring page to print, save, or add to the coloring book. */
-export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: Props) {
+/** Turns a sticker into an A5 coloring page to print, save, or add to a coloring book. */
+export function ColoringStudio({ sticker, books, onAdd, onCreateBook, onOpenBook, onClose, toast }: Props) {
   const [detail, setDetail] = useState<ColoringDetail>(() => saved(DETAIL_KEY, COLORING_DETAILS, 'medium'))
   const [engine, setEngine] = useState<Engine>(() => saved(ENGINE_KEY, ['ai', 'free'] as Engine[], 'ai'))
   const [ai, setAi] = useState<AiSettings>(loadAiSettings)
@@ -54,7 +59,9 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
   const [working, setWorking] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [aiError, setAiError] = useState<{ message: string; kind: AiErrorKind } | null>(null)
-  const [added, setAdded] = useState<Set<string>>(() => new Set())
+  // Which book each version of the page went into.
+  const [added, setAdded] = useState<Map<string, string>>(() => new Map())
+  const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState<'pdf' | 'add' | null>(null)
   // Line art per detail level, so flipping back and forth doesn't redraw it. AI drawings cost
   // money, so they're only made when asked for, and kept.
@@ -173,7 +180,10 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
   const price = priceLabel(ai)
   // Other models ready to go, cheapest first, for when the chosen one refuses.
   const alternatives = AI_ENGINES.filter((e) => e.id !== aiEngine.id && hasKey(ai, e)).slice(0, 2)
-  const isAdded = added.has(key)
+  const addedTo = added.get(key)
+  const isAdded = addedTo !== undefined
+  // The book the header button opens: where this page went, or the newest one.
+  const headerBook = addedTo ?? [...added.values()].at(-1) ?? books?.[0]?.id
 
   const savePdf = async () => {
     if (!ready || busy) return
@@ -193,11 +203,19 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
     printPages([page.url]).catch(() => toast("Couldn't open printing"))
   }
 
-  const add = async () => {
-    if (!ready || busy || isAdded) return
+  /** Adds the page to a book; with several books, asks which one first. */
+  const add = async (target?: string | 'new') => {
+    if (!ready || busy || isAdded || !books) return
+    if (target === undefined && books.length > 1) {
+      setPicking(true)
+      return
+    }
+    setPicking(false)
     setBusy('add')
     try {
-      await onAdd({
+      const book = target && target !== 'new' ? books.find((b) => b.id === target) : target === 'new' ? null : books[0]
+      const into = book ?? (await onCreateBook())
+      await onAdd(into.id, {
         id: newId(),
         stickerId: sticker.id,
         sticker: sticker.blob,
@@ -206,8 +224,8 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
         detail,
         createdAt: Date.now(),
       })
-      setAdded(new Set(added).add(key))
-      toast('Added to your coloring book!')
+      setAdded(new Map(added).set(key, into.id))
+      toast(`Added to ${into.title}!`)
     } catch (err) {
       console.error(err)
       toast("Couldn't add the page. Is your storage full?")
@@ -226,9 +244,13 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
           <h2>
             Coloring page <span className="beta">Beta</span>
           </h2>
-          <button className="icon-btn book-bar-btn" onClick={onOpenBook} aria-label="Open coloring book">
-            <BookIcon />
-          </button>
+          {headerBook ? (
+            <button className="icon-btn book-bar-btn" onClick={() => onOpenBook(headerBook)} aria-label="Open coloring book">
+              <BookIcon />
+            </button>
+          ) : (
+            <span className="icon-btn-spacer" />
+          )}
         </header>
 
         <div className="paper-stage">
@@ -356,16 +378,52 @@ export function ColoringStudio({ sticker, onAdd, onOpenBook, onClose, toast }: P
             <DownloadIcon /> {busy === 'pdf' ? 'Saving…' : 'PDF'}
           </button>
           {isAdded ? (
-            <button className="btn btn-primary" onClick={onOpenBook}>
+            <button className="btn btn-primary" onClick={() => onOpenBook(addedTo)}>
               <BookIcon /> Open book
             </button>
           ) : (
-            <button className="btn btn-primary" onClick={add} disabled={!ready || busy !== null}>
+            <button className="btn btn-primary" onClick={() => add()} disabled={!ready || busy !== null || !books}>
               <BookIcon /> {busy === 'add' ? 'Adding…' : 'Add to book'}
             </button>
           )}
         </div>
       </div>
+
+      {picking && books && (
+        <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && setPicking(false)}>
+          <div className="sheet book-picker" role="dialog" aria-modal="true" aria-label="Add to which book?">
+            <header className="sheet-header">
+              <span className="icon-btn-spacer" />
+              <h2>Add to which book?</h2>
+              <button className="icon-btn" onClick={() => setPicking(false)} aria-label="Close">
+                <CloseIcon />
+              </button>
+            </header>
+            <ul className="book-picker-list">
+              {books.map((book) => (
+                <li key={book.id}>
+                  <button className="export-option" onClick={() => add(book.id)}>
+                    <BookIcon />
+                    <span>
+                      <strong>{book.title}</strong>
+                      <small>{pageCount(book.pages.length)}</small>
+                    </span>
+                  </button>
+                </li>
+              ))}
+              <li>
+                <button className="export-option" onClick={() => add('new')}>
+                  <PlusIcon />
+                  <span>
+                    <strong>New book</strong>
+                    <small>Start a fresh coloring book with this page</small>
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+      )}
 
       {settingsOpen && (
         <AiSettingsSheet

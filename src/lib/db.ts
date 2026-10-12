@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import { LEGACY_BOOK_ID, type CoverBackground, type CoverLayout } from './books'
 import type { ColoringDetail } from './coloring'
 import type { FolderColor, FolderKey } from './folders'
 import type { StickerEffect } from './effects'
@@ -27,14 +28,25 @@ export interface FolderRecord {
   color: FolderColor
 }
 
-/** A page in the coloring book. */
+/** A coloring book: its title and how its cover looks. Its pages point at it. */
+export interface BookRecord {
+  id: string
+  title: string
+  background: CoverBackground
+  layout: CoverLayout
+  createdAt: number
+}
+
+/** A page in a coloring book. */
 export interface BookPageRecord {
   id: string
+  /** The book it's in. Pages from before there could be several books don't have one (see bookIdOf). */
+  bookId?: string
   stickerId: string
   /** A copy of the original sticker for the cover, so the book survives the sticker being deleted. */
   sticker: Blob
   effect?: StickerEffect
-  /** The finished A5 page as a PNG at print resolution. */
+  /** The A5 page as a PNG at print resolution; page numbers and running heads are added when printing. */
   page: Blob
   detail: ColoringDetail
   /** Order in the book; lower comes first. */
@@ -42,8 +54,13 @@ export interface BookPageRecord {
   createdAt: number
 }
 
-/** What changed on this device and still has to be sent to the server. One entry per record. */
-export type OutboxKind = 'sticker' | 'folder' | 'book' | 'settings'
+export const bookIdOf = (page: Pick<BookPageRecord, 'bookId'>) => page.bookId ?? LEGACY_BOOK_ID
+
+/**
+ * What changed on this device and still has to be sent to the server. One entry per record.
+ * 'book' is a page of a coloring book (from when there was only one), 'book-info' a book itself.
+ */
+export type OutboxKind = 'sticker' | 'folder' | 'book' | 'book-info' | 'settings'
 
 export interface OutboxEntry {
   key: string
@@ -69,6 +86,10 @@ interface StickerDB extends DBSchema {
     key: string
     value: BookPageRecord
   }
+  books: {
+    key: string
+    value: BookRecord
+  }
   outbox: {
     key: string
     value: OutboxEntry
@@ -83,7 +104,7 @@ let dbPromise: Promise<IDBPDatabase<StickerDB>> | undefined
 
 function db() {
   // Each step only adds to what the previous version had, so existing collections are kept.
-  dbPromise ??= openDB<StickerDB>('stickers', 4, {
+  dbPromise ??= openDB<StickerDB>('stickers', 5, {
     upgrade(database, oldVersion) {
       if (oldVersion < 1) {
         const store = database.createObjectStore('stickers', { keyPath: 'id' })
@@ -95,6 +116,7 @@ function db() {
         database.createObjectStore('outbox', { keyPath: 'key' })
         database.createObjectStore('meta', { keyPath: 'key' })
       }
+      if (oldVersion < 5) database.createObjectStore('books', { keyPath: 'id' })
     },
     // Another tab with a newer version wants to upgrade: step aside and reopen on next use.
     blocking(_current, _blocked, event) {
@@ -175,7 +197,36 @@ export async function saveFolder(record: FolderRecord): Promise<void> {
   changedLocally()
 }
 
-/** The coloring book's pages, in book order. */
+/** Every coloring book, oldest first. */
+export async function listBooks(): Promise<BookRecord[]> {
+  const all = await (await db()).getAll('books')
+  return all.sort((a, b) => a.createdAt - b.createdAt)
+}
+
+export async function getBook(id: string): Promise<BookRecord | undefined> {
+  return (await db()).get('books', id)
+}
+
+export async function saveBook(record: BookRecord): Promise<void> {
+  const tx = (await db()).transaction(['books', 'outbox'], 'readwrite')
+  await Promise.all([tx.objectStore('books').put(record), enqueue(tx.objectStore('outbox'), 'book-info', record.id)])
+  await tx.done
+  changedLocally()
+}
+
+/** Deletes a book and every page in it. */
+export async function deleteBook(id: string): Promise<void> {
+  const tx = (await db()).transaction(['books', 'book', 'outbox'], 'readwrite')
+  const outbox = tx.objectStore('outbox')
+  const pages = (await tx.objectStore('book').getAll()).filter((p) => bookIdOf(p) === id)
+  await tx.objectStore('books').delete(id)
+  await enqueue(outbox, 'book-info', id)
+  for (const page of pages) await Promise.all([tx.objectStore('book').delete(page.id), enqueue(outbox, 'book', page.id)])
+  await tx.done
+  changedLocally()
+}
+
+/** The pages of every coloring book, each book's in order. */
 export async function listBookPages(): Promise<BookPageRecord[]> {
   const all = await (await db()).getAll('book')
   return all.sort((a, b) => a.position - b.position)
@@ -199,7 +250,7 @@ export async function deleteBookPage(id: string): Promise<void> {
   changedLocally()
 }
 
-/** Renumbers the book so pages come in the order of `ids`. */
+/** Renumbers a book so its pages come in the order of `ids`. */
 export async function reorderBook(ids: string[]): Promise<void> {
   const tx = (await db()).transaction(['book', 'outbox'], 'readwrite')
   const store = tx.objectStore('book')
@@ -226,21 +277,32 @@ export async function bookTitleChanged(): Promise<void> {
 /** Everything in the database, for backups. */
 export async function readAll() {
   const database = await db()
-  const [stickers, folders, book] = await Promise.all([listStickers(), database.getAll('folders'), listBookPages()])
-  return { stickers, folders, book }
+  const [stickers, folders, book, books] = await Promise.all([
+    listStickers(),
+    database.getAll('folders'),
+    listBookPages(),
+    listBooks(),
+  ])
+  return { stickers, folders, book, books }
 }
 
 /**
  * Adds restored records to the collection in one go. Records with the same id are replaced, and
  * anything not in the backup is left alone, so restoring twice or onto a used phone is safe.
  */
-export async function restoreAll(data: { stickers: StickerRecord[]; folders: FolderRecord[]; book: BookPageRecord[] }) {
-  const tx = (await db()).transaction(['stickers', 'folders', 'book', 'outbox'], 'readwrite')
+export async function restoreAll(data: {
+  stickers: StickerRecord[]
+  folders: FolderRecord[]
+  book: BookPageRecord[]
+  books: BookRecord[]
+}) {
+  const tx = (await db()).transaction(['stickers', 'folders', 'book', 'books', 'outbox'], 'readwrite')
   const outbox = tx.objectStore('outbox')
   // One at a time per store: enqueue reads before it writes, so parallel calls for one key could race.
   for (const r of data.stickers) await Promise.all([tx.objectStore('stickers').put(r), enqueue(outbox, 'sticker', r.id, true)])
   for (const r of data.folders) await Promise.all([tx.objectStore('folders').put(r), enqueue(outbox, 'folder', r.key)])
   for (const r of data.book) await Promise.all([tx.objectStore('book').put(r), enqueue(outbox, 'book', r.id, true)])
+  for (const r of data.books) await Promise.all([tx.objectStore('books').put(r), enqueue(outbox, 'book-info', r.id)])
   await tx.done
   changedLocally()
 }
@@ -268,15 +330,17 @@ export async function clearOutbox(sent: OutboxEntry[]) {
  * only goes if this device has one, so a new device doesn't blank the title everywhere else.
  */
 export async function queueEverything({ bookTitle }: { bookTitle: boolean }) {
-  const tx = (await db()).transaction(['stickers', 'folders', 'book', 'outbox'], 'readwrite')
+  const tx = (await db()).transaction(['stickers', 'folders', 'book', 'books', 'outbox'], 'readwrite')
   const outbox = tx.objectStore('outbox')
-  const [stickers, folders, book] = await Promise.all([
+  const [stickers, folders, book, books] = await Promise.all([
     tx.objectStore('stickers').getAllKeys(),
     tx.objectStore('folders').getAllKeys(),
     tx.objectStore('book').getAllKeys(),
+    tx.objectStore('books').getAllKeys(),
   ])
   for (const id of stickers) await enqueue(outbox, 'sticker', id, true)
   for (const key of folders) await enqueue(outbox, 'folder', key)
+  for (const id of books) await enqueue(outbox, 'book-info', id)
   for (const id of book) await enqueue(outbox, 'book', id, true)
   if (bookTitle) await enqueue(outbox, 'settings', 'book')
   await tx.done
@@ -301,8 +365,9 @@ export async function applyRemote(changes: {
   stickers: RemoteChange<Omit<StickerRecord, 'blob'> & { blob?: Blob }>[]
   folders: FolderRecord[]
   book: RemoteChange<Omit<BookPageRecord, 'page' | 'sticker'> & { page?: Blob; sticker?: Blob }>[]
+  books: RemoteChange<BookRecord>[]
 }): Promise<boolean> {
-  const tx = (await db()).transaction(['stickers', 'folders', 'book', 'outbox'], 'readwrite')
+  const tx = (await db()).transaction(['stickers', 'folders', 'book', 'books', 'outbox'], 'readwrite')
   const outbox = tx.objectStore('outbox')
   const pending = new Set(await outbox.getAllKeys())
   let changed = false
@@ -337,6 +402,13 @@ export async function applyRemote(changes: {
       if (!page || !sticker) continue
       await store.put({ ...change.record, page, sticker })
     }
+    changed = true
+  }
+  for (const change of changes.books) {
+    if (pending.has(`book-info:${change.key}`)) continue
+    const store = tx.objectStore('books')
+    if (change.deleted) await store.delete(change.key)
+    else await store.put(change.record)
     changed = true
   }
   await tx.done

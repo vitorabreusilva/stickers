@@ -2,10 +2,12 @@ import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { firstImageFile } from '../lib/device'
 import { folderColor, folderLabel, type FolderColor, type FolderKey } from '../lib/folders'
 import type { TopicGroup } from '../lib/topics'
+import type { Book } from '../hooks/useColoringBooks'
 import type { Sticker } from '../hooks/useStickers'
+import { BookCard, NewBookCard } from './BookCard'
 import { Folder } from './Folder'
-import { StickerGrid } from './StickerGrid'
-import { BookIcon, CloseIcon, GoogleIcon, PasteIcon, PlusIcon, SettingsIcon, StarMascot } from './icons'
+import { StickerArt } from './StickerArt'
+import { CloseIcon, GoogleIcon, PasteIcon, PlusIcon, SettingsIcon, StarMascot } from './icons'
 
 interface Props {
   stickers: Sticker[] | null
@@ -20,15 +22,18 @@ interface Props {
   onPaste: () => void
   onOpen: (id: string) => void
   onOpenFolder: (key: FolderKey) => void
-  /** Pages in the coloring book; null while loading. */
-  bookPages: number | null
-  onOpenBook: () => void
+  /** The coloring books, newest first; null while loading. */
+  books: Book[] | null
+  onOpenBook: (id: string) => void
+  onNewBook: () => void
   onOpenBackup: () => void
   /** Set while signed out, to offer signing in right on the home screen. */
   onSignIn?: () => void
 }
 
 const SIGN_IN_DISMISSED = 'stickers.signInDismissed'
+/** How many of the newest stickers the home screen shows up top. */
+const LATEST = 5
 
 export function Collection({
   stickers,
@@ -41,8 +46,9 @@ export function Collection({
   onPaste,
   onOpen,
   onOpenFolder,
-  bookPages,
+  books,
   onOpenBook,
+  onNewBook,
   onOpenBackup,
   onSignIn,
 }: Props) {
@@ -66,9 +72,11 @@ export function Collection({
   }
 
   const count = stickers?.length ?? 0
-  // A single group needs no folders; the stickers go straight on the page.
-  const foldered = groups.length > 1
-  const folders: { key: FolderKey; items: Sticker[] }[] = [{ key: 'all', items: stickers ?? [] }, ...groups]
+  // With a single group, "All stickers" would be the same folder twice.
+  const folders: { key: FolderKey; items: Sticker[] }[] =
+    groups.length > 1 ? [{ key: 'all', items: stickers ?? [] }, ...groups] : groups
+  const latest = (stickers ?? []).slice(0, LATEST)
+  const showBooks = count > 0 || !!books?.length
 
   const onFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = firstImageFile(e.target.files)
@@ -98,18 +106,9 @@ export function Collection({
           Stickers
           {count > 0 && <span className="count">{count}</span>}
         </h1>
-        <div className="collection-actions">
-          {(count > 0 || !!bookPages) && (
-            <button className="book-btn" onClick={onOpenBook} aria-label={`Coloring book, ${bookPages ?? 0} pages`}>
-              <BookIcon />
-              <span>Coloring book</span>
-              {!!bookPages && <span className="book-btn-count">{bookPages}</span>}
-            </button>
-          )}
-          <button className="icon-btn backup-btn" onClick={onOpenBackup} aria-label="Settings">
-            <SettingsIcon />
-          </button>
-        </div>
+        <button className="icon-btn backup-btn" onClick={onOpenBackup} aria-label="Settings">
+          <SettingsIcon />
+        </button>
       </header>
 
       {onSignIn && !signInDismissed && (
@@ -135,31 +134,69 @@ export function Collection({
         </section>
       )}
 
-      {count > 0 &&
-        (foldered ? (
-          // Wait for the saved colours so folders don't flash their defaults first.
-          colors && (
-            <ul className="folders" aria-label="Folders">
-              {folders.map(({ key, items }) => {
-                const { emoji, name } = folderLabel(key, sorting)
-                return (
-                  <li key={key}>
-                    <Folder
-                      name={name}
-                      emoji={emoji}
-                      items={items}
-                      color={folderColor(key, colors)}
-                      freshId={freshId}
-                      onOpen={() => onOpenFolder(key)}
-                    />
-                  </li>
-                )
-              })}
-            </ul>
-          )
-        ) : (
-          <StickerGrid items={stickers!} label="Your stickers" freshId={freshId} onOpen={onOpen} />
-        ))}
+      {count > 0 && (
+        <section className="home-section" aria-labelledby="latest-heading">
+          <h2 id="latest-heading">Latest</h2>
+          <ul className="latest" aria-label="Latest stickers">
+            {latest.map((sticker) => (
+              <li key={sticker.id}>
+                <button
+                  className={`latest-item${sticker.id === freshId ? ' fresh' : ''}`}
+                  onClick={() => onOpen(sticker.id)}
+                  aria-label="Open sticker"
+                >
+                  <StickerArt image={sticker} effect={sticker.effect} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Wait for the saved colours so folders don't flash their defaults first. */}
+      {count > 0 && colors && (
+        <section className="home-section" aria-labelledby="folders-heading">
+          <h2 id="folders-heading">Folders</h2>
+          <ul className="folders" aria-label="Folders">
+            {folders.map(({ key, items }) => {
+              const { emoji, name } = folderLabel(key, sorting)
+              return (
+                <li key={key}>
+                  <Folder
+                    name={name}
+                    emoji={emoji}
+                    items={items}
+                    color={folderColor(key, colors)}
+                    freshId={freshId}
+                    onOpen={() => onOpenFolder(key)}
+                  />
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
+
+      {showBooks && books && (
+        <section className="home-section" aria-labelledby="books-heading">
+          <h2 id="books-heading">
+            Coloring books <span className="beta">Beta</span>
+          </h2>
+          <ul className="shelf" aria-label="Coloring books">
+            {books.map((book) => (
+              <li key={book.id}>
+                <BookCard book={book} onOpen={() => onOpenBook(book.id)} />
+              </li>
+            ))}
+            <li>
+              <NewBookCard onClick={onNewBook} />
+            </li>
+          </ul>
+          {!books.length && (
+            <p className="shelf-hint">Open a sticker and tap Color to turn it into a page for a coloring book.</p>
+          )}
+        </section>
+      )}
 
       <div className="dock">
         {canPaste && (

@@ -8,6 +8,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_PUSH_RECORDS,
   type ImageKind,
+  type SyncBook,
   type SyncBookPage,
   type SyncFolder,
   type SyncPull,
@@ -15,7 +16,7 @@ import {
   type SyncSticker,
 } from '../src/lib/sync-protocol.js'
 import { getDb, type Db } from './db/client.js'
-import { bookPages, folders, nextRev, settings, stickers } from './db/schema.js'
+import { bookPages, books, folders, nextRev, settings, stickers } from './db/schema.js'
 import { getImageStore } from './images.js'
 
 export type SignedIn = { Variables: { userId: string } }
@@ -57,17 +58,34 @@ function cleanFolder(raw: unknown): SyncFolder {
   return { key, color }
 }
 
+const LEGACY_BOOK_ID = 'default'
+
 function cleanPage(raw: unknown): SyncBookPage {
   const p = raw as SyncBookPage
   if (!isRecordId(p?.id)) throw new BadRequest('Bad page id')
   if (p.deleted) return { id: p.id, deleted: true, stickerId: '', detail: '', position: 0, createdAt: 0 }
+  if (p.bookId != null && !isRecordId(p.bookId)) throw new BadRequest('Bad book id')
   return {
     id: p.id,
+    bookId: p.bookId ?? LEGACY_BOOK_ID,
     stickerId: str(p.stickerId, 64) ?? '',
     effect: optional(p.effect, 40),
     detail: str(p.detail, 40) ?? 'medium',
     position: int(p.position),
     createdAt: int(p.createdAt),
+  }
+}
+
+function cleanBook(raw: unknown): SyncBook {
+  const b = raw as SyncBook
+  if (!isRecordId(b?.id)) throw new BadRequest('Bad book id')
+  if (b.deleted) return { id: b.id, deleted: true, title: '', background: '', layout: '', createdAt: 0 }
+  return {
+    id: b.id,
+    title: str(b.title, 200) ?? '',
+    background: str(b.background, 40) ?? 'cream',
+    layout: str(b.layout, 40) ?? 'playful',
+    createdAt: int(b.createdAt),
   }
 }
 
@@ -81,7 +99,10 @@ async function push(db: Db, userId: string, body: SyncPush) {
   const newStickers = lastOf(list(body.stickers).map(cleanSticker), (s) => s.id)
   const newFolders = lastOf(list(body.folders).map(cleanFolder), (f) => f.key)
   const newPages = lastOf(list(body.book).map(cleanPage), (p) => p.id)
-  if (newStickers.length + newFolders.length + newPages.length > MAX_PUSH_RECORDS) throw new BadRequest('Too many')
+  const newBooks = lastOf(list(body.books).map(cleanBook), (b) => b.id)
+  if (newStickers.length + newFolders.length + newPages.length + newBooks.length > MAX_PUSH_RECORDS) {
+    throw new BadRequest('Too many')
+  }
 
   await db.transaction(async (tx) => {
     // One writer per person at a time, so revision numbers become visible in order and a device
@@ -121,10 +142,27 @@ async function push(db: Db, userId: string, body: SyncPush) {
           set: {
             rev: nextRev,
             deleted: sql`excluded.deleted`,
+            bookId: sql`excluded.book_id`,
             stickerId: sql`excluded.sticker_id`,
             effect: sql`excluded.effect`,
             detail: sql`excluded.detail`,
             position: sql`excluded.position`,
+            createdAt: sql`excluded.created_at`,
+          },
+        })
+    }
+    if (newBooks.length) {
+      await tx
+        .insert(books)
+        .values(newBooks.map((b) => ({ ...b, userId, deleted: !!b.deleted })))
+        .onConflictDoUpdate({
+          target: [books.userId, books.id],
+          set: {
+            rev: nextRev,
+            deleted: sql`excluded.deleted`,
+            title: sql`excluded.title`,
+            background: sql`excluded.background`,
+            layout: sql`excluded.layout`,
             createdAt: sql`excluded.created_at`,
           },
         })
@@ -152,7 +190,7 @@ async function push(db: Db, userId: string, body: SyncPush) {
 }
 
 async function pull(db: Db, userId: string, since: number): Promise<SyncPull> {
-  const [s, f, b, settingsRows] = await Promise.all([
+  const [s, f, b, bk, settingsRows] = await Promise.all([
     db
       .select()
       .from(stickers)
@@ -173,6 +211,12 @@ async function pull(db: Db, userId: string, since: number): Promise<SyncPull> {
       .limit(PULL_LIMIT + 1),
     db
       .select()
+      .from(books)
+      .where(and(eq(books.userId, userId), gt(books.rev, since)))
+      .orderBy(asc(books.rev))
+      .limit(PULL_LIMIT + 1),
+    db
+      .select()
       .from(settings)
       .where(and(eq(settings.userId, userId), gt(settings.rev, since))),
   ])
@@ -183,17 +227,19 @@ async function pull(db: Db, userId: string, since: number): Promise<SyncPull> {
     | { rev: number; kind: 'sticker'; row: (typeof s)[number] }
     | { rev: number; kind: 'folder'; row: (typeof f)[number] }
     | { rev: number; kind: 'page'; row: (typeof b)[number] }
+    | { rev: number; kind: 'book'; row: (typeof bk)[number] }
     | { rev: number; kind: 'settings'; row: (typeof settingsRows)[number] }
   const all: Row[] = [
     ...s.map((row) => ({ rev: row.rev, kind: 'sticker' as const, row })),
     ...f.map((row) => ({ rev: row.rev, kind: 'folder' as const, row })),
     ...b.map((row) => ({ rev: row.rev, kind: 'page' as const, row })),
+    ...bk.map((row) => ({ rev: row.rev, kind: 'book' as const, row })),
     ...settingsRows.map((row) => ({ rev: row.rev, kind: 'settings' as const, row })),
   ].sort((x, y) => x.rev - y.rev)
   const more = all.length > PULL_LIMIT
   const kept = all.slice(0, PULL_LIMIT)
 
-  const result: SyncPull = { rev: kept.at(-1)?.rev ?? since, more, stickers: [], folders: [], book: [] }
+  const result: SyncPull = { rev: kept.at(-1)?.rev ?? since, more, stickers: [], folders: [], book: [], books: [] }
   for (const item of kept) {
     if (item.kind === 'sticker') {
       const { row } = item
@@ -219,12 +265,20 @@ async function pull(db: Db, userId: string, since: number): Promise<SyncPull> {
           ? { id: row.id, deleted: true, stickerId: '', detail: '', position: 0, createdAt: 0 }
           : {
               id: row.id,
+              bookId: row.bookId,
               stickerId: row.stickerId,
               effect: row.effect,
               detail: row.detail,
               position: row.position,
               createdAt: row.createdAt,
             },
+      )
+    } else if (item.kind === 'book') {
+      const { row } = item
+      result.books.push(
+        row.deleted
+          ? { id: row.id, deleted: true, title: '', background: '', layout: '', createdAt: 0 }
+          : { id: row.id, title: row.title, background: row.background, layout: row.layout, createdAt: row.createdAt },
       )
     } else {
       result.settings = { bookTitle: item.row.bookTitle }

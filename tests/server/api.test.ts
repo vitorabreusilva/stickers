@@ -108,7 +108,11 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
             { id: 's2', width: 10, height: 10, createdAt: 2, effect: 'holo' },
           ],
           folders: [{ key: 'dogs', color: 'mint' }],
-          book: [{ id: 'p1', stickerId: 's1', detail: 'simple', position: 0, createdAt: 3 }],
+          book: [
+            { id: 'p1', stickerId: 's1', detail: 'simple', position: 0, createdAt: 3 },
+            { id: 'p2', bookId: 'b2', stickerId: 's2', detail: 'medium', position: 0, createdAt: 4 },
+          ],
+          books: [{ id: 'b2', title: 'Holiday', background: 'night', layout: 'wild', createdAt: 4 }],
           settings: { bookTitle: 'Rex' },
         })
       ).status,
@@ -121,15 +125,25 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
       { id: 's2', width: 10, height: 10, createdAt: 2, topic: null, effect: 'holo', analysis: null },
     ])
     expect(first.folders).toEqual([{ key: 'dogs', color: 'mint' }])
-    expect(first.book).toEqual([{ id: 'p1', stickerId: 's1', detail: 'simple', position: 0, createdAt: 3, effect: null }])
+    // Pages from devices that don't know about books yet land in the first book.
+    expect(first.book).toEqual([
+      { id: 'p1', bookId: 'default', stickerId: 's1', detail: 'simple', position: 0, createdAt: 3, effect: null },
+      { id: 'p2', bookId: 'b2', stickerId: 's2', detail: 'medium', position: 0, createdAt: 4, effect: null },
+    ])
+    expect(first.books).toEqual([{ id: 'b2', title: 'Holiday', background: 'night', layout: 'wild', createdAt: 4 }])
     expect(first.settings).toEqual({ bookTitle: 'Rex' })
 
     // Only what changed comes back next time, deletions included.
-    await pushJson(me.cookie, { stickers: [{ id: 's2', deleted: true }], folders: [{ key: 'dogs', color: 'gold' }] })
+    await pushJson(me.cookie, {
+      stickers: [{ id: 's2', deleted: true }],
+      folders: [{ key: 'dogs', color: 'gold' }],
+      books: [{ id: 'b2', deleted: true }],
+    })
     const second = await pullJson(me.cookie, first.rev)
     expect(second.stickers).toEqual([{ id: 's2', deleted: true, width: 0, height: 0, createdAt: 0 }])
     expect(second.folders).toEqual([{ key: 'dogs', color: 'gold' }])
     expect(second.book).toEqual([])
+    expect(second.books).toEqual([{ id: 'b2', deleted: true, title: '', background: '', layout: '', createdAt: 0 }])
     expect(second.settings).toBeUndefined()
     expect((await pullJson(me.cookie, second.rev)).stickers).toEqual([])
   })
