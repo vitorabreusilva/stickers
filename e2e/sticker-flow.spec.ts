@@ -358,8 +358,8 @@ test.describe('coloring book', () => {
     return page.getByRole('dialog', { name: 'Coloring page' })
   }
 
-  test('draw a page with AI using your own OpenAI key', async ({ page }) => {
-    // What OpenAI sends back: a line drawing, slightly grey and soft like a real one.
+  test('draw a page with AI, and switch to another model when one refuses', async ({ page }) => {
+    // What the AI sends back: a line drawing, slightly grey and soft like a real one.
     const drawing = await page.evaluate(() => {
       const canvas = document.createElement('canvas')
       canvas.width = 1024
@@ -376,16 +376,21 @@ test.describe('coloring book', () => {
       ctx.fillRect(450, 450, 120, 120)
       return canvas.toDataURL('image/png').split(',')[1]
     })
-    const requests: { auth: string | null; body: string }[] = []
-    let reply = 401
+    const openai: { auth: string | null; body: string }[] = []
     await page.route('https://api.openai.com/v1/images/edits', async (route) => {
-      requests.push({ auth: route.request().headers()['authorization'] ?? null, body: route.request().postData() ?? '' })
-      if (reply === 401) {
-        reply = 200
-        await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Incorrect API key provided' } }) })
-        return
-      }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ b64_json: drawing }] }) })
+      openai.push({ auth: route.request().headers()['authorization'] ?? null, body: route.request().postData() ?? '' })
+      const [status, message] =
+        openai.length === 1 ? [401, 'Incorrect API key provided'] : [400, 'Your request was rejected as a result of our safety system.']
+      await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error: { message } }) })
+    })
+    const google: { key: string | null; body: string }[] = []
+    await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
+      google.push({ key: route.request().headers()['x-goog-api-key'] ?? null, body: route.request().postData() ?? '' })
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { mimeType: 'image/png', data: drawing } }] } }] }),
+      })
     })
 
     const studio = await openColoringPage(page)
@@ -395,26 +400,37 @@ test.describe('coloring book', () => {
 
     await studio.getByRole('button', { name: 'Set up AI drawing' }).click()
     const sheet = page.getByRole('dialog', { name: 'AI drawing settings' })
+    await expect(sheet.getByRole('radio', { name: /GPT Image/ })).toHaveAttribute('aria-checked', 'true')
     await sheet.getByLabel('OpenAI API key').fill('sk-wrong')
     await sheet.getByRole('radio', { name: 'Draft' }).click()
-    await expect(sheet.getByText('Each page costs about $0.013.')).toBeVisible()
+    await expect(sheet.getByRole('radio', { name: /GPT Image/ })).toContainText('about $0.013 a page')
     await sheet.getByRole('button', { name: 'Save' }).click()
 
     await studio.getByRole('button', { name: 'Draw with AI' }).click()
     await expect(studio.getByRole('alert')).toHaveText('OpenAI rejected the API key. Check it in AI settings.')
-    expect(requests[0].auth).toBe('Bearer sk-wrong')
+    expect(openai[0].auth).toBe('Bearer sk-wrong')
 
     await studio.getByRole('button', { name: 'AI settings' }).click()
     await sheet.getByLabel('OpenAI API key').fill('sk-right')
     await sheet.getByRole('button', { name: 'Save' }).click()
-    await studio.getByRole('button', { name: 'Try again' }).click()
+    await studio.getByRole('button', { name: 'Draw with AI' }).click()
+
+    // OpenAI refuses this one; with no other model set up yet, the page offers to set one up.
+    await expect(studio.getByRole('alert')).toHaveText('OpenAI declined to draw this sticker.')
+    expect(openai[1].auth).toBe('Bearer sk-right')
+    expect(openai[1].body).toContain('name="quality"\r\n\r\nlow')
+    await studio.getByRole('button', { name: 'Set up another model' }).click()
+    await sheet.getByRole('radio', { name: /Nano Banana 2/ }).click()
+    await sheet.getByLabel('Google API key').fill('AIza-test')
+    await sheet.getByRole('button', { name: 'Save' }).click()
+    await expect(studio.getByText('Nano Banana 2 by Google, about $0.067 a page')).toBeVisible()
+    await studio.getByRole('button', { name: 'Draw with AI' }).click()
 
     const preview = studio.getByTestId('coloring-page')
     await expect(preview).toHaveAttribute('data-engine', 'ai', { timeout: 20_000 })
     await expect(studio.getByRole('button', { name: 'Add to book' })).toBeEnabled()
-    expect(requests[1].auth).toBe('Bearer sk-right')
-    expect(requests[1].body).toContain('name="quality"\r\n\r\nlow')
-    expect(requests[1].body).toContain('coloring book')
+    expect(google[0].key).toBe('AIza-test')
+    expect(google[0].body).toContain('coloring book')
 
     // The drawing fills the page as crisp black lines; the grey shading is gone.
     const sheetPixels = await preview.evaluate(async (img: HTMLImageElement) => {
@@ -438,7 +454,7 @@ test.describe('coloring book', () => {
     await expect(studio.getByRole('button', { name: 'Draw with AI' })).toBeVisible()
     await studio.getByRole('radio', { name: 'Medium' }).click()
     await expect(preview).toHaveAttribute('data-engine', 'ai')
-    expect(requests).toHaveLength(2)
+    expect(google).toHaveLength(1)
 
     await studio.getByRole('button', { name: 'Add to book' }).click()
     await expect(page.getByText('Added to your coloring book!')).toBeVisible()

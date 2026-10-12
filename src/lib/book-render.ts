@@ -1,6 +1,6 @@
 // Draws coloring pages and the book cover at print resolution, and exports them as PDF or prints them.
 
-import { aiSize, requestAiLineArt, type AiSettings } from './ai-coloring'
+import { aiSize, engineById, requestAiLineArt, type AiEngine, type AiSettings } from './ai-coloring'
 import { ART_BOX, collageLayout, DPI, FOOTER_BOX, fitBox, mmToPx, PAGE_MM, PAGE_PX } from './book-layout'
 import { LINE_WIDTHS_MM, type ColoringDetail } from './coloring'
 import type { ColoringReply, ColoringRequest } from './coloring-protocol'
@@ -85,7 +85,7 @@ async function runWorker(request: ColoringRequest): Promise<HTMLCanvasElement> {
 }
 
 /**
- * Line art for a sticker drawn by OpenAI's image model, tidied and sized to fill the drawing area
+ * Line art for a sticker drawn by an AI image model, tidied and sized to fill the drawing area
  * of an A5 page. The sticker is sent on white, shaped like the picture that comes back.
  */
 export async function drawAiColoringArt(
@@ -93,6 +93,7 @@ export async function drawAiColoringArt(
   detail: ColoringDetail,
   settings: AiSettings,
   signal?: AbortSignal,
+  engine: AiEngine = engineById(settings.engine),
 ): Promise<HTMLCanvasElement> {
   const bitmap = await createImageBitmap(sticker)
   const size = aiSize(bitmap.width / bitmap.height)
@@ -105,7 +106,7 @@ export async function drawAiColoringArt(
   ictx.drawImage(bitmap, spot.x, spot.y, spot.width, spot.height)
   bitmap.close()
 
-  const drawn = await requestAiLineArt(await canvasToBlob(input), size, detail, settings, signal)
+  const drawn = await requestAiLineArt(await canvasToBlob(input), size, detail, settings, signal, engine)
   const result = await createImageBitmap(drawn)
   const canvas = createCanvas(result.width, result.height)
   const cctx = context(canvas)

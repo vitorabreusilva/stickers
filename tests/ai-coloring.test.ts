@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { aiSize, coloringPrompt, describeAiError, priceLabel, requestAiLineArt } from '../src/lib/ai-coloring'
+import { AiError, aiSize, coloringPrompt, describeAiError, priceLabel, requestAiLineArt, type AiSettings } from '../src/lib/ai-coloring'
 import { cleanLineArt } from '../src/lib/line-art'
 
-const settings = { key: ' sk-test ', model: 'gpt-image-1.5', quality: 'medium' as const }
+const settings: AiSettings = {
+  engine: 'openai',
+  keys: { openai: ' sk-test ', google: 'AIza-test', fal: 'fal-test' },
+  models: {},
+  quality: 'medium',
+}
+const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 })
 
 describe('requestAiLineArt', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -44,6 +50,65 @@ describe('requestAiLineArt', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: 'Incorrect API key provided' } }), { status: 401 })))
     await expect(requestAiLineArt(new Blob(['x']), '1024x1024', 'medium', settings)).rejects.toThrow('OpenAI rejected the API key')
   })
+
+  it('marks refusals, so another model can be offered', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: 'Your request was rejected by the safety system.' } }), { status: 400 })),
+    )
+    const err = await requestAiLineArt(new Blob(['x']), '1024x1024', 'medium', settings).catch((e) => e)
+    expect(err).toBeInstanceOf(AiError)
+    expect(err.kind).toBe('refused')
+  })
+
+  it('draws with Google Nano Banana 2', async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      ok({ candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { mimeType: 'image/png', data: btoa('png') } }] } }] }),
+    )
+    vi.stubGlobal('fetch', fetch)
+    const result = await requestAiLineArt(new Blob(['sticker']), '1024x1536', 'medium', { ...settings, engine: 'gemini' })
+    expect(await result.text()).toBe('png')
+    const [url, init] = fetch.mock.calls[0]
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent')
+    expect(init.headers['x-goog-api-key']).toBe('AIza-test')
+    const body = JSON.parse(init.body)
+    expect(body.generationConfig).toEqual({ responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '2:3' } })
+    expect(body.contents[0].parts[0].text).toContain('coloring book')
+    expect(atob(body.contents[0].parts[1].inlineData.data)).toBe('sticker')
+  })
+
+  it('treats a Google answer without a picture as a refusal', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok({ candidates: [{ finishReason: 'IMAGE_SAFETY', content: { parts: [] } }] })))
+    const err = await requestAiLineArt(new Blob(['x']), '1024x1024', 'medium', { ...settings, engine: 'gemini' }).catch((e) => e)
+    expect(err.kind).toBe('refused')
+  })
+
+  it.each([
+    ['kontext', 'fal-ai/flux-pro/kontext', { image_url: 'data:image/png;base64,c3RpY2tlcg==', aspect_ratio: '3:2' }],
+    ['seedream', 'fal-ai/bytedance/seedream/v4/edit', { image_urls: ['data:image/png;base64,c3RpY2tlcg=='], image_size: { width: 1536, height: 1024 } }],
+    ['qwen', 'fal-ai/qwen-image-edit', { image_url: 'data:image/png;base64,c3RpY2tlcg==' }],
+  ])('draws with %s on fal.ai', async (engine, endpoint, expected) => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(ok({ images: [{ url: 'data:image/png;base64,' + btoa('drawn') }] }))
+      .mockResolvedValueOnce(new Response(new Blob(['drawn'])))
+    vi.stubGlobal('fetch', fetch)
+    const result = await requestAiLineArt(new Blob(['sticker']), '1536x1024', 'medium', { ...settings, engine })
+    expect(await result.text()).toBe('drawn')
+    const [url, init] = fetch.mock.calls[0]
+    expect(url).toBe(`https://fal.run/${endpoint}`)
+    expect(init.headers.Authorization).toBe('Key fal-test')
+    const body = JSON.parse(init.body)
+    expect(body).toMatchObject({ ...expected, sync_mode: true, num_images: 1 })
+    expect(body.prompt).toContain('coloring book')
+  })
+
+  it('uses a model name typed into the settings', async () => {
+    const fetch = vi.fn().mockResolvedValue(ok({ candidates: [{ content: { parts: [{ inlineData: { data: btoa('x') } }] } }] }))
+    vi.stubGlobal('fetch', fetch)
+    await requestAiLineArt(new Blob(['x']), '1024x1024', 'medium', { ...settings, engine: 'gemini', models: { gemini: 'gemini-next-image' } })
+    expect(fetch.mock.calls[0][0]).toContain('/models/gemini-next-image:generateContent')
+  })
 })
 
 describe('AI helpers', () => {
@@ -62,18 +127,20 @@ describe('AI helpers', () => {
     expect(coloringPrompt('detailed')).not.toBe(coloringPrompt('simple'))
   })
 
-  it('turns OpenAI errors into next steps', () => {
-    expect(describeAiError(403, 'Your organization must be verified to use the model')).toContain('verified')
-    expect(describeAiError(429, 'You exceeded your current quota, please check your plan and billing')).toContain('out of credit')
-    expect(describeAiError(429, 'Rate limit reached')).toContain('busy')
-    expect(describeAiError(400, 'Your request was rejected by the safety system')).toContain('declined')
-    expect(describeAiError(400, 'Something odd')).toBe('OpenAI said: Something odd')
+  it('turns provider errors into next steps', () => {
+    expect(describeAiError('openai', 403, 'Your organization must be verified to use the model').message).toContain('verified')
+    expect(describeAiError('openai', 429, 'You exceeded your current quota, please check your plan and billing').message).toContain('out of credit')
+    expect(describeAiError('google', 429, 'Rate limit reached').message).toBe('Google is busy right now. Wait a minute and try again.')
+    expect(describeAiError('google', 400, 'API key not valid. Please pass a valid API key.').kind).toBe('key')
+    expect(describeAiError('fal', 403, 'User is locked. Reason: Exhausted balance.').message).toContain('out of credit')
+    expect(describeAiError('openai', 400, 'Something odd').message).toBe('OpenAI said: Something odd')
   })
 
   it('shows a price only for models it knows', () => {
-    expect(priceLabel({ model: 'gpt-image-1.5', quality: 'medium' })).toBe('about $0.05')
-    expect(priceLabel({ model: 'gpt-image-1-mini', quality: 'low' })).toBe('about $0.006')
-    expect(priceLabel({ model: 'something-new', quality: 'low' })).toBeNull()
+    expect(priceLabel(settings)).toBe('about $0.05')
+    expect(priceLabel({ ...settings, models: { openai: 'gpt-image-1-mini' }, quality: 'low' })).toBe('about $0.006')
+    expect(priceLabel({ ...settings, engine: 'kontext' })).toBe('about $0.04')
+    expect(priceLabel({ ...settings, models: { openai: 'something-new' } })).toBeNull()
   })
 })
 
@@ -114,5 +181,27 @@ describe('cleanLineArt', () => {
     }
     expect(solid).toBeGreaterThan(10)
     expect(soft).toBeLessThanOrEqual(4)
+  })
+})
+
+describe('loadAiSettings', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('keeps the OpenAI key saved by the first version', async () => {
+    const store = new Map([
+      ['stickers.ai.key', 'sk-old'],
+      ['stickers.ai.quality', 'low'],
+    ])
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => store.set(k, v),
+      removeItem: (k: string) => store.delete(k),
+    })
+    const { loadAiSettings, saveAiSettings } = await import('../src/lib/ai-coloring')
+    const loaded = loadAiSettings()
+    expect(loaded).toMatchObject({ engine: 'openai', keys: { openai: 'sk-old', google: '', fal: '' }, quality: 'low' })
+    saveAiSettings({ ...loaded, engine: 'kontext', keys: { ...loaded.keys, fal: ' fal-key ' } })
+    expect(store.has('stickers.ai.key')).toBe(false)
+    expect(loadAiSettings()).toMatchObject({ engine: 'kontext', keys: { openai: 'sk-old', fal: 'fal-key' } })
   })
 })
