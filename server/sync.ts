@@ -60,6 +60,7 @@ function cleanFolder(raw: unknown): SyncFolder {
 
 const LEGACY_BOOK_ID = 'default'
 
+/** A page as pushed; `bookId` stays missing when the device doesn't know about books. */
 function cleanPage(raw: unknown): SyncBookPage {
   const p = raw as SyncBookPage
   if (!isRecordId(p?.id)) throw new BadRequest('Bad page id')
@@ -67,7 +68,7 @@ function cleanPage(raw: unknown): SyncBookPage {
   if (p.bookId != null && !isRecordId(p.bookId)) throw new BadRequest('Bad book id')
   return {
     id: p.id,
-    bookId: p.bookId ?? LEGACY_BOOK_ID,
+    ...(p.bookId != null && { bookId: p.bookId }),
     stickerId: str(p.stickerId, 64) ?? '',
     effect: optional(p.effect, 40),
     detail: str(p.detail, 40) ?? 'medium',
@@ -133,16 +134,20 @@ async function push(db: Db, userId: string, body: SyncPush) {
         .values(newFolders.map((f) => ({ ...f, userId })))
         .onConflictDoUpdate({ target: [folders.userId, folders.key], set: { rev: nextRev, color: sql`excluded.color` } })
     }
-    if (newPages.length) {
+    // Devices that don't know about books yet send pages without one. New pages from them go in
+    // the first book, and their edits (a new position, say) leave the page in its book.
+    for (const knowsBooks of [false, true]) {
+      const pages = newPages.filter((p) => (p.bookId !== undefined) === knowsBooks)
+      if (!pages.length) continue
       await tx
         .insert(bookPages)
-        .values(newPages.map((p) => ({ ...p, userId, deleted: !!p.deleted })))
+        .values(pages.map((p) => ({ ...p, bookId: p.bookId ?? LEGACY_BOOK_ID, userId, deleted: !!p.deleted })))
         .onConflictDoUpdate({
           target: [bookPages.userId, bookPages.id],
           set: {
             rev: nextRev,
             deleted: sql`excluded.deleted`,
-            bookId: sql`excluded.book_id`,
+            ...(knowsBooks && { bookId: sql`excluded.book_id` }),
             stickerId: sql`excluded.sticker_id`,
             effect: sql`excluded.effect`,
             detail: sql`excluded.detail`,

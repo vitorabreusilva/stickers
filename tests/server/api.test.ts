@@ -144,6 +144,13 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     expect(second.folders).toEqual([{ key: 'dogs', color: 'gold' }])
     expect(second.book).toEqual([])
     expect(second.books).toEqual([{ id: 'b2', deleted: true, title: '', background: '', layout: '', createdAt: 0 }])
+
+    // A device that doesn't know about books moving a page leaves it in its book.
+    await pushJson(me.cookie, { book: [{ id: 'p2', stickerId: 's2', detail: 'medium', position: 3, createdAt: 4 }] })
+    const third = await pullJson(me.cookie, second.rev)
+    expect(third.book).toEqual([
+      { id: 'p2', bookId: 'b2', stickerId: 's2', detail: 'medium', position: 3, createdAt: 4, effect: null },
+    ])
     expect(second.settings).toBeUndefined()
     expect((await pullJson(me.cookie, second.rev)).stickers).toEqual([])
   })

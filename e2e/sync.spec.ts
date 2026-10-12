@@ -142,3 +142,95 @@ test('a collection follows you to another device, both ways', async ({ browser }
   await laptopSheet.getByRole('button', { name: 'Close' }).click()
   await expect(laptop.getByRole('button', { name: 'Open sticker' })).toHaveCount(1)
 })
+
+test('coloring books follow you to another device', async ({ browser }) => {
+  test.setTimeout(120_000)
+  const cookies = await account()
+  const phone = await device(browser, cookies)
+  const laptop = await device(browser, cookies)
+
+  await phone.goto('/')
+  const image = await phone.evaluate(async () => {
+    const canvas = new OffscreenCanvas(60, 80)
+    canvas.getContext('2d')!.fillRect(0, 0, 60, 80)
+    return btoa(String.fromCharCode(...new Uint8Array(await (await canvas.convertToBlob()).arrayBuffer())))
+  })
+  const blob = { type: 'image/png', base64: image }
+  const page = (id: string, position: number, bookId?: string) => ({
+    id,
+    ...(bookId && { bookId }),
+    stickerId: 's1',
+    sticker: blob,
+    page: blob,
+    detail: 'medium',
+    position,
+    createdAt: position + 10,
+  })
+  const backup = {
+    format: 'stickers-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    folders: [],
+    bookTitle: 'Old one',
+    stickers: [{ id: 's1', width: 60, height: 80, createdAt: 1, topic: 'food', blob }],
+    books: [{ id: 'trip', title: 'Road Trip', background: 'night', layout: 'wild', createdAt: 5 }],
+    book: [page('p1', 0, 'trip'), page('p2', 1, 'trip'), page('p3', 0)],
+  }
+  await phone.getByRole('button', { name: 'Settings' }).click()
+  const phoneSheet = phone.getByRole('dialog', { name: 'Settings' })
+  await phoneSheet.getByTestId('backup-input').setInputFiles({ name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) })
+  await phoneSheet.getByRole('button', { name: 'Restore' }).click()
+  const phoneShelf = phone.getByRole('list', { name: 'Coloring books' })
+  await expect(phoneShelf.getByRole('button', { name: 'Road Trip, 2 pages' })).toBeVisible({ timeout: 10_000 })
+  await phone.getByRole('button', { name: 'Settings' }).click()
+  await expect(phoneSheet.getByText(/^Synced at /)).toBeVisible({ timeout: 15_000 })
+  await phoneSheet.getByRole('button', { name: 'Close' }).click()
+
+  // The laptop gets both books, the first one under its old title.
+  await laptop.goto('/')
+  const laptopShelf = laptop.getByRole('list', { name: 'Coloring books' })
+  await expect(laptopShelf.getByRole('button', { name: 'Road Trip, 2 pages' })).toBeVisible({ timeout: 15_000 })
+  await expect(laptopShelf.getByRole('button', { name: 'Old one, 1 page' })).toBeVisible()
+
+  // An installed app opens on its cached version after an update and syncs once with it. Like the
+  // version before books, that run keeps the pages without their book, drops the books, and moves
+  // the cursor past them. The new version must fetch them again.
+  await laptop.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const open = indexedDB.open('stickers')
+      open.onsuccess = () => resolve(open.result)
+      open.onerror = () => reject(open.error)
+    })
+    const tx = db.transaction(['books', 'book', 'meta'], 'readwrite')
+    tx.objectStore('books').clear()
+    const pages = tx.objectStore('book')
+    pages.getAll().onsuccess = (e) => {
+      for (const { bookId: _, ...page } of (e.target as IDBRequest).result) pages.put(page)
+    }
+    tx.objectStore('meta').delete('pullVersion')
+    await new Promise((resolve) => (tx.oncomplete = resolve))
+    db.close()
+  })
+  await laptop.reload()
+  await expect(laptopShelf.getByRole('button', { name: 'Road Trip, 2 pages' })).toBeVisible({ timeout: 15_000 })
+  await expect(laptopShelf.getByRole('button', { name: 'Old one, 1 page' })).toBeVisible()
+
+  // A new book made on the laptop shows up on the phone.
+  const made = pushed(laptop)
+  await laptopShelf.getByRole('button', { name: 'New book' }).click()
+  const book = laptop.getByRole('dialog', { name: 'Coloring book' })
+  await book.getByLabel('Title').fill('Made on laptop')
+  await book.getByRole('radio', { name: 'Tidy' }).click()
+  await made
+  await laptop.goBack()
+  await expect(laptopShelf.getByRole('button', { name: 'Made on laptop, 0 pages' })).toBeVisible()
+  await laptop.getByRole('button', { name: 'Settings' }).click()
+  await expect(laptop.getByRole('dialog', { name: 'Settings' }).getByText(/^Synced at /)).toBeVisible({ timeout: 15_000 })
+
+  await phone.getByRole('button', { name: 'Settings' }).click()
+  const phonePull = pulled(phone)
+  await phoneSheet.getByRole('button', { name: 'Sync now' }).click()
+  await phonePull
+  await phoneSheet.getByRole('button', { name: 'Close' }).click()
+  await expect(phoneShelf.getByRole('button', { name: 'Made on laptop, 0 pages' })).toBeVisible({ timeout: 10_000 })
+})
