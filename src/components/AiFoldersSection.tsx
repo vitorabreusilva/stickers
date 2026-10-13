@@ -4,7 +4,7 @@ import { SparkleIcon } from './icons'
 const BUSY = {
   describing: 'Looking at your stickers…',
   sorting: 'Sorting new stickers into folders…',
-  regrouping: 'Sorting everything again…',
+  regrouping: 'Sorting stickers again…',
 }
 
 /** Turning AI folders on and off, and sorting everything again. Shown when the server can make them. */
@@ -13,8 +13,14 @@ export function AiFoldersSection({ aiFolders, toast }: { aiFolders: AiFolders; t
 
   const regroupAll = async () => {
     try {
-      const ran = await regroup()
-      toast(ran ? 'Sorted into new folders!' : 'Nothing to sort yet. Give the AI a moment to look at your stickers.')
+      const result = await regroup()
+      toast(
+        result === 'busy'
+          ? 'The AI is still busy. Try again in a moment.'
+          : result === 'empty'
+            ? 'Nothing to sort yet. Give the AI a moment to look at your stickers.'
+            : 'Sorted into new folders!',
+      )
     } catch {
       toast("Couldn't sort the stickers. Try again in a moment.")
     }

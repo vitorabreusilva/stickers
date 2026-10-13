@@ -34,7 +34,10 @@ export interface SyncSticker {
 
 export interface SyncFolder {
   key: string
+  /** '' until a colour is picked. */
   color: string
+  /** The name the user gave it; '' or null for none. Missing from devices that haven't updated. */
+  name?: string | null
 }
 
 export interface SyncBook {
@@ -43,6 +46,8 @@ export interface SyncBook {
   title: string
   background: string
   layout: string
+  /** One sticker on the cover instead of the layout (see BookCover). Missing from devices that haven't updated. */
+  cover?: object | null
   createdAt: number
 }
 

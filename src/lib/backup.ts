@@ -1,6 +1,6 @@
 import { parseStickerAi } from './smart-groups'
 import { base64ToBytes, bytesToBase64, decodeAnalysis, encodeAnalysis, type EncodedAnalysis } from './codec'
-import { DEFAULT_STYLE, isCoverBackground, isCoverLayout } from './books'
+import { DEFAULT_STYLE, isCoverBackground, isCoverLayout, parseBookCover } from './books'
 import type { BookPageRecord, BookRecord, FolderRecord, StickerRecord } from './db'
 
 /**
@@ -131,6 +131,7 @@ export async function readBackup(file: Blob): Promise<BackupContents> {
             title: typeof b.title === 'string' ? b.title : '',
             background: isCoverBackground(b.background) ? b.background : DEFAULT_STYLE.background,
             layout: isCoverLayout(b.layout) ? b.layout : DEFAULT_STYLE.layout,
+            ...(parseBookCover(b.cover) && { cover: parseBookCover(b.cover) }),
             createdAt: typeof b.createdAt === 'number' ? b.createdAt : 0,
           },
         ]

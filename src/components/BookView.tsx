@@ -1,16 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useDragReorder } from '../hooks/useDragReorder'
 import { bookSides, type BookSide } from '../lib/book-layout'
 import { bookToPdf, printBook } from '../lib/book-render'
-import {
-  bookFileName,
-  COVER_BACKGROUNDS,
-  COVER_LAYOUT_NAMES,
-  COVER_LAYOUTS,
-  COVER_PALETTES,
-  DEFAULT_TITLE,
-  LEGACY_BOOK_ID,
-} from '../lib/books'
+import { bookFileName, DEFAULT_TITLE, LEGACY_BOOK_ID } from '../lib/books'
 import type { BookPageRecord, BookRecord } from '../lib/db'
 import { storeBookTitle } from '../lib/book-title'
 import { downloadBlob } from '../lib/device'
@@ -25,6 +17,7 @@ import {
   CloseIcon,
   DownloadIcon,
   ExpandIcon,
+  PaletteIcon,
   PencilIcon,
   PlusIcon,
   PrintIcon,
@@ -43,8 +36,8 @@ interface Props {
   /** Puts the book's pages in the order of `ids`. */
   onReorderPages: (ids: string[]) => Promise<void>
   onUpdatePage: (id: string, patch: Partial<Pick<BookPageRecord, 'bookId' | 'hideGuide'>>) => Promise<void>
-  /** Opens the page-through preview at side `index`. */
-  onPreview: (index: number) => void
+  /** Opens the page-through preview at side `index`, or at the cover to customize it. */
+  onPreview: (index: number, customize?: boolean) => void
   /** A page to open straight away, e.g. when coming from the sticker it was made from. */
   initialPage?: string
   /** The sticker in the collection a page was made from, if it's still there. */
@@ -209,38 +202,9 @@ export function BookView({
           <input value={title} maxLength={40} onChange={(e) => setTitle(e.target.value)} placeholder={DEFAULT_TITLE} />
         </label>
 
-        <section className="cover-options" aria-label="Cover">
-          <div className="cover-option">
-            <span className="cover-option-label">Cover</span>
-            <div className="swatches cover-swatches" role="radiogroup" aria-label="Cover colour">
-              {COVER_BACKGROUNDS.map((bg) => (
-                <button
-                  key={bg}
-                  role="radio"
-                  aria-checked={book.background === bg}
-                  aria-label={COVER_PALETTES[bg].name}
-                  className="swatch"
-                  style={{ '--folder': COVER_PALETTES[bg].paper } as CSSProperties}
-                  onClick={() => onUpdate({ background: bg }).catch(() => toast("Couldn't change the cover"))}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="segmented cover-layouts" role="radiogroup" aria-label="Sticker layout">
-            {COVER_LAYOUTS.map((layout) => (
-              <button
-                key={layout}
-                role="radio"
-                aria-checked={book.layout === layout}
-                className={book.layout === layout ? 'active' : ''}
-                onClick={() => onUpdate({ layout }).catch(() => toast("Couldn't change the cover"))}
-              >
-                <LayoutGlyph layout={layout} />
-                {COVER_LAYOUT_NAMES[layout]}
-              </button>
-            ))}
-          </div>
-        </section>
+        <button className="btn btn-secondary book-cover-btn" onClick={() => onPreview(0, true)}>
+          <PaletteIcon /> Customize cover
+        </button>
 
         <div className="book-summary">
           <p>
@@ -529,41 +493,5 @@ function PageSheet({
         </ul>
       </div>
     </div>
-  )
-}
-
-/** A tiny sketch of each cover layout, for its button. */
-function LayoutGlyph({ layout }: { layout: BookRecord['layout'] }) {
-  const boxes: Record<BookRecord['layout'], [number, number, number, number, number][]> = {
-    playful: [
-      [2, 3, 7, 7, -8],
-      [11, 2, 7, 7, 6],
-      [3, 11, 7, 7, 5],
-      [11, 11, 7, 7, -6],
-    ],
-    tidy: [
-      [2.5, 2.5, 6, 6, 0],
-      [11.5, 2.5, 6, 6, 0],
-      [2.5, 11.5, 6, 6, 0],
-      [11.5, 11.5, 6, 6, 0],
-    ],
-    wild: [
-      [1, 4, 10, 10, -24],
-      [8, 1, 9, 9, 18],
-      [7, 9, 10, 10, -10],
-    ],
-    spotlight: [
-      [4, 1, 12, 11, -3],
-      [2, 14, 4.5, 4.5, 0],
-      [7.75, 14, 4.5, 4.5, 0],
-      [13.5, 14, 4.5, 4.5, 0],
-    ],
-  }
-  return (
-    <svg className="layout-glyph" viewBox="0 0 20 20" aria-hidden="true">
-      {boxes[layout].map(([x, y, w, h, r], i) => (
-        <rect key={i} x={x} y={y} width={w} height={h} rx="1.6" transform={`rotate(${r} ${x + w / 2} ${y + h / 2})`} />
-      ))}
-    </svg>
   )
 }

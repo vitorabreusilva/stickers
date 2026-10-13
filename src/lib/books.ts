@@ -48,6 +48,23 @@ export interface CoverStyle {
 
 export const DEFAULT_STYLE: CoverStyle = { background: 'cream', layout: 'playful' }
 
+/**
+ * A cover made of one sticker (or stamp) instead of a layout of all of them. With `photo`, the
+ * picture it was made from fills the whole cover instead, behind the title.
+ */
+export interface BookCover {
+  kind: 'sticker'
+  stickerId: string
+  photo?: boolean
+}
+
+/** A synced cover, checked; undefined if it isn't one (or the book uses a layout). */
+export function parseBookCover(raw: unknown): BookCover | undefined {
+  const r = raw as Partial<BookCover> | null
+  if (!r || r.kind !== 'sticker' || typeof r.stickerId !== 'string' || !r.stickerId) return undefined
+  return { kind: r.kind, stickerId: r.stickerId.slice(0, 64), ...(r.photo === true && { photo: true }) }
+}
+
 export function isCoverBackground(value: unknown): value is CoverBackground {
   return typeof value === 'string' && (COVER_BACKGROUNDS as readonly string[]).includes(value)
 }

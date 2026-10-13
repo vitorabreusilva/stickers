@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import { LEGACY_BOOK_ID, type CoverBackground, type CoverLayout } from './books'
+import { LEGACY_BOOK_ID, type BookCover, type CoverBackground, type CoverLayout } from './books'
 import type { ColoringDetail } from './coloring'
 import type { FolderColor, FolderKey } from './folders'
 import type { StickerEffect } from './effects'
@@ -37,7 +37,10 @@ export interface StickerRecord {
 /** How the user dressed up a folder in the collection. */
 export interface FolderRecord {
   key: FolderKey
-  color: FolderColor
+  /** Missing until a colour is picked. */
+  color?: FolderColor
+  /** A name the user gave it, shown instead of the one it gets automatically. */
+  name?: string
 }
 
 /** A coloring book: its title and how its cover looks. Its pages point at it. */
@@ -46,6 +49,8 @@ export interface BookRecord {
   title: string
   background: CoverBackground
   layout: CoverLayout
+  /** One sticker on the cover instead of `layout`. */
+  cover?: BookCover
   createdAt: number
 }
 

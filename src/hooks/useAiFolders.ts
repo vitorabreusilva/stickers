@@ -72,11 +72,12 @@ export function useAiFolders(stickers: StickerRecord[] | null, save: Save, signe
     }
   }, [])
 
-  /** Files `batch` into folders, with what else is in `all`, and saves where each went. */
+  /** Files `batch` into folders, with what else is in `all`, and saves where each went. Returns the folders' names. */
   const sortBatch = useCallback(
     async (all: StickerRecord[], batch: StickerRecord[]) => {
       const { assignments } = await sortIntoFolders(groupRequest(all, batch), all.length)
       const placed = new Map(assignments.map((a) => [a.id, a]))
+      const names = new Set<string>()
       for (const sticker of batch) {
         const where = placed.get(sticker.id)
         if (!where || !sticker.ai) {
@@ -85,8 +86,10 @@ export function useAiFolders(stickers: StickerRecord[] | null, save: Save, signe
         }
         const folder: AiFolder = { name: where.name, emoji: where.emoji }
         sticker.ai = { ...sticker.ai, folder }
+        names.add(where.name)
         await save(sticker.id, { ai: sticker.ai })
       }
+      return names
     },
     [save],
   )
@@ -114,7 +117,7 @@ export function useAiFolders(stickers: StickerRecord[] | null, save: Save, signe
       const all = (stickersRef.current ?? []).map((s) => ({ ...s }))
       const batch = all.filter((s) => needsFolder(s) && !skipFolder.current.has(s.id)).slice(0, MAX_GROUP_BATCH)
       if (!batch.length) return
-      run('sorting', () => sortBatch(all, batch)).catch((err) => {
+      run('sorting', async () => void (await sortBatch(all, batch))).catch((err) => {
         batch.forEach((s) => skipFolder.current.add(s.id))
         console.warn('Could not sort stickers into folders', err)
       })
@@ -122,20 +125,27 @@ export function useAiFolders(stickers: StickerRecord[] | null, save: Save, signe
     return () => clearTimeout(timer)
   }, [enabled, stickers, run, save, sortBatch, tick])
 
-  /** Sorts the whole collection again from scratch, except stickers placed by hand. */
-  const regroup = useCallback(async () => {
+  /**
+   * Sorts the collection again from scratch, or just the stickers in `only`, except stickers placed
+   * by hand. Says which folders they went in, or why nothing happened.
+   */
+  const regroup = useCallback(async (only?: ReadonlySet<string>): Promise<string[] | 'empty' | 'busy'> => {
     const all = (stickersRef.current ?? []).map((s) => ({ ...s }))
-    const targets = all.filter((s) => s.ai && !s.topic && !s.ai.folder?.pinned)
-    if (!targets.length) return false
+    const targets = all.filter((s) => s.ai && !s.topic && !s.ai.folder?.pinned && (!only || only.has(s.id)))
+    if (!targets.length) return 'empty'
     // Forget their folders first, so later batches build on the new folders, not the old ones.
     for (const s of targets) {
       const { folder: _, ...rest } = s.ai!
       s.ai = rest
     }
     skipFolder.current.clear()
-    return run('regrouping', async () => {
-      for (let i = 0; i < targets.length; i += MAX_GROUP_BATCH) await sortBatch(all, targets.slice(i, i + MAX_GROUP_BATCH))
+    const names = new Set<string>()
+    const ran = await run('regrouping', async () => {
+      for (let i = 0; i < targets.length; i += MAX_GROUP_BATCH) {
+        for (const name of await sortBatch(all, targets.slice(i, i + MAX_GROUP_BATCH))) names.add(name)
+      }
     })
+    return ran ? [...names] : 'busy'
   }, [run, sortBatch])
 
   const setOn = useCallback((on: boolean) => {

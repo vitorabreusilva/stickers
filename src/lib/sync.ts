@@ -19,16 +19,25 @@ import {
   setMeta,
   type BookPageRecord,
   type BookRecord,
+  type FolderRecord,
   type OutboxEntry,
   type RemoteChange,
   type StickerRecord,
 } from './db'
-import { DEFAULT_STYLE, isCoverBackground, isCoverLayout, LEGACY_BOOK_ID } from './books'
+import { DEFAULT_STYLE, isCoverBackground, isCoverLayout, LEGACY_BOOK_ID, parseBookCover } from './books'
 import type { ColoringDetail } from './coloring'
 import type { StickerEffect } from './effects'
 import { parseStickerAi } from './smart-groups'
-import { isFolderColor, type FolderKey } from './folders'
-import { IMAGE_TYPES, type ImageKind, type SyncBook, type SyncPull, type SyncPush, type SyncSticker } from './sync-protocol'
+import { cleanFolderName, isFolderColor, type FolderKey } from './folders'
+import {
+  IMAGE_TYPES,
+  type ImageKind,
+  type SyncBook,
+  type SyncFolder,
+  type SyncPull,
+  type SyncPush,
+  type SyncSticker,
+} from './sync-protocol'
 import type { TopicId } from './topics'
 
 const PUSH_BATCH = 50
@@ -36,11 +45,11 @@ const PUSH_BATCH = 50
  * Raised whenever the server starts sending something earlier versions of the app didn't keep (2:
  * coloring books, and which book each page is in; 3: pages with their colour guide hidden;
  * 4: what the AI says each sticker shows, and its AI folder; 5: stamps, and the size of each sticker's
- * original picture). An installed app opens on its cached version
+ * original picture; 6: folder names, and covers of one sticker). An installed app opens on its cached version
  * after an update and syncs once before the new one takes over, so that old version can move the
  * cursor past records it threw away. A new version pulls everything again to pick those up.
  */
-const PULL_VERSION = 5
+const PULL_VERSION = 6
 const DOWNLOADS_AT_ONCE = 4
 
 /** The server said we're not signed in (any more). */
@@ -84,6 +93,15 @@ const stickerToSync = (s: StickerRecord): SyncSticker => ({
   original: s.originalSize ?? null,
 })
 
+const folderToSync = (f: FolderRecord): SyncFolder => ({ key: f.key, color: f.color ?? '', name: f.name ?? '' })
+
+function folderFromSync(f: SyncFolder): FolderRecord | null {
+  const name = typeof f.name === 'string' ? cleanFolderName(f.name) : ''
+  const color = isFolderColor(f.color) ? f.color : undefined
+  if (!name && !color) return null
+  return { key: f.key as FolderKey, ...(color && { color }), ...(name && { name }) }
+}
+
 const pageToSync = (p: BookPageRecord) => ({
   id: p.id,
   bookId: p.bookId ?? LEGACY_BOOK_ID,
@@ -100,16 +118,21 @@ const bookToSync = (b: BookRecord): SyncBook => ({
   title: b.title,
   background: b.background,
   layout: b.layout,
+  cover: b.cover ?? null,
   createdAt: b.createdAt,
 })
 
-const bookFromSync = (b: SyncBook): BookRecord => ({
-  id: b.id,
-  title: b.title,
-  background: isCoverBackground(b.background) ? b.background : DEFAULT_STYLE.background,
-  layout: isCoverLayout(b.layout) ? b.layout : DEFAULT_STYLE.layout,
-  createdAt: b.createdAt,
-})
+function bookFromSync(b: SyncBook): BookRecord {
+  const cover = parseBookCover(b.cover)
+  return {
+    id: b.id,
+    title: b.title,
+    background: isCoverBackground(b.background) ? b.background : DEFAULT_STYLE.background,
+    layout: isCoverLayout(b.layout) ? b.layout : DEFAULT_STYLE.layout,
+    ...(cover && { cover }),
+    createdAt: b.createdAt,
+  }
+}
 
 /** Sends one batch of the outbox. Returns false once it's empty. */
 async function pushBatch(): Promise<boolean> {
@@ -136,7 +159,7 @@ async function pushBatch(): Promise<boolean> {
       }
     } else if (entry.kind === 'folder') {
       const folder = await getFolder(entry.id)
-      if (folder) body.folders.push(folder)
+      if (folder) body.folders.push(folderToSync(folder))
     } else if (entry.kind === 'book') {
       const page = await getBookPage(entry.id)
       if (!page) body.book.push({ id: entry.id, deleted: true, stickerId: '', detail: '', position: 0, createdAt: 0 })
@@ -234,7 +257,7 @@ async function pullPage(): Promise<boolean> {
     })
   })
 
-  const folders = page.folders.flatMap((f) => (isFolderColor(f.color) ? [{ key: f.key as FolderKey, color: f.color }] : []))
+  const folders = page.folders.flatMap((f) => folderFromSync(f) ?? [])
   // The title first, so it's in place when the screens reload for the records.
   if (page.settings && !(await hasPending('settings', 'book'))) receiveBookTitle(page.settings.bookTitle)
   const books = (page.books ?? []).map((b) =>

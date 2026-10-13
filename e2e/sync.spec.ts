@@ -103,11 +103,18 @@ test('a collection follows you to another device, both ways', async ({ browser }
   expect(size).toEqual([300, 200])
   await expect.poll(() => laptop.evaluate(() => localStorage.getItem('stickers.bookTitle'))).toBe('Sunny')
 
-  // A folder colour picked on the laptop shows up on the phone.
+  // A folder colour and name picked on the laptop show up on the phone.
   await laptopFolders.getByRole('button', { name: /^Food & drinks/ }).click()
+  await laptop.getByRole('dialog', { name: 'Food & drinks' }).getByRole('button', { name: 'Folder settings' }).click()
+  const folderSheet = laptop.getByRole('dialog', { name: 'Folder settings' })
   const colour = pushed(laptop)
-  await laptop.getByRole('dialog', { name: 'Food & drinks' }).getByRole('radio', { name: 'Mint' }).click()
+  await folderSheet.getByRole('radio', { name: 'Mint' }).click()
   await colour
+  const named = pushed(laptop)
+  await folderSheet.getByLabel('Name').fill('Snacks')
+  await folderSheet.getByLabel('Name').press('Enter')
+  await named
+  await expect(laptop.getByRole('dialog', { name: 'Snacks' })).toBeVisible()
   await laptop.goBack()
   const laptopSheet = laptop.getByRole('dialog', { name: 'Settings' })
 
@@ -117,11 +124,11 @@ test('a collection follows you to another device, both ways', async ({ browser }
   await phonePull
   await phoneSheet.getByRole('button', { name: 'Close' }).click()
   const phoneFolders = phone.getByRole('list', { name: 'Folders' })
-  await phoneFolders.getByRole('button', { name: /^Food & drinks/ }).click()
-  await expect(phone.getByRole('dialog', { name: 'Food & drinks' }).getByRole('radio', { name: 'Mint' })).toHaveAttribute('aria-checked', 'true')
+  await expect(phoneFolders.getByRole('button', { name: /^Snacks/ })).toHaveAttribute('data-color', 'mint')
+  await phoneFolders.getByRole('button', { name: /^Snacks/ }).click()
 
   // Deleting on the phone removes it from the laptop.
-  await phone.getByRole('dialog', { name: 'Food & drinks' }).getByRole('button', { name: 'Open sticker' }).click()
+  await phone.getByRole('dialog', { name: 'Snacks' }).getByRole('button', { name: 'Open sticker' }).click()
   const detail = phone.getByRole('dialog', { name: 'Sticker', exact: true })
   await detail.getByRole('button', { name: 'Delete' }).click()
   const deletion = pushed(phone)
@@ -220,8 +227,10 @@ test('coloring books follow you to another device', async ({ browser }) => {
   await laptopShelf.getByRole('button', { name: 'New book' }).click()
   const book = laptop.getByRole('dialog', { name: 'Coloring book' })
   await book.getByLabel('Title').fill('Made on laptop')
-  await book.getByRole('radio', { name: 'Tidy' }).click()
+  await book.getByRole('button', { name: 'Customize cover' }).click()
+  await laptop.getByRole('region', { name: 'Customize cover' }).getByRole('radio', { name: 'Tidy' }).click()
   await made
+  await laptop.goBack()
   await laptop.goBack()
   await expect(laptopShelf.getByRole('button', { name: 'Made on laptop, 0 pages' })).toBeVisible()
   await laptop.getByRole('button', { name: 'Settings' }).click()

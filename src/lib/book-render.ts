@@ -16,6 +16,7 @@ import {
   PAGE_MM,
   PAGE_PX,
   type BookSide,
+  type Box,
 } from './book-layout'
 import { COVER_PALETTES, DEFAULT_TITLE, type CoverPalette, type CoverStyle } from './books'
 import { LINE_WIDTHS_MM, type ColoringDetail } from './coloring'
@@ -280,12 +281,70 @@ export interface CoverSticker {
   effect?: StickerEffect
 }
 
-/** The book's cover: its title over its stickers in full colour, laid out in the chosen style. */
-async function drawCover(ctx: CanvasRenderingContext2D, stickers: CoverSticker[], title: string, style: CoverStyle) {
-  const palette = COVER_PALETTES[style.background]
-  drawCoverPaper(ctx, palette)
+/** A sticker with its effect baked in, ready to draw. */
+async function stickerBitmap({ blob, effect }: CoverSticker): Promise<ImageBitmap> {
+  const baked = effect && effect !== 'none' ? await bakeEffect(blob, effect).catch(() => blob) : blob
+  return createImageBitmap(baked)
+}
 
-  // Title, as a sticker of its own with an outline, shrunk to fit.
+/** `hex` (#rrggbb) at `alpha`. */
+function withAlpha(hex: string, alpha: number) {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
+}
+
+/**
+ * The book's cover: its title over its stickers in full colour, laid out in the chosen style, or
+ * over one sticker, or over the picture that sticker was cut from.
+ */
+async function drawCover(ctx: CanvasRenderingContext2D, book: BookContents) {
+  const { stickers, cover } = book
+  const palette = COVER_PALETTES[book.style.background]
+  drawCoverPaper(ctx, palette)
+  if (cover?.photo) {
+    await drawCoverPhoto(ctx, cover.photo, palette)
+    drawCoverTitle(ctx, book.title, palette, true)
+    return
+  }
+  drawCoverTitle(ctx, book.title, palette, false)
+
+  const margin = mmToPx(12)
+  const area = { x: margin, y: mmToPx(50), width: PAGE_PX.width - 2 * margin, height: PAGE_PX.height - mmToPx(50) - margin }
+  if (cover) {
+    const image = await stickerBitmap(cover.sticker)
+    drawSingleSticker(ctx, image, area)
+    image.close()
+    return
+  }
+  if (!stickers.length) {
+    // Nothing to show yet: the app's star stands in.
+    ctx.globalAlpha = 0.9
+    drawLogo(ctx, area.x + area.width / 2, area.y + area.height * 0.42, mmToPx(56), 'color')
+    ctx.globalAlpha = 1
+    return
+  }
+
+  const images = await Promise.all(stickers.map(stickerBitmap))
+  const placements = coverLayout(
+    book.style.layout,
+    images.map((img) => img.width / img.height),
+    area,
+  )
+  placements.forEach((p, i) => {
+    ctx.save()
+    ctx.translate(p.cx, p.cy)
+    ctx.rotate(p.rotation)
+    ctx.shadowColor = 'rgba(40, 20, 60, 0.28)'
+    ctx.shadowBlur = mmToPx(2)
+    ctx.shadowOffsetY = mmToPx(1)
+    ctx.drawImage(images[i], -p.width / 2, -p.height / 2, p.width, p.height)
+    ctx.restore()
+    images[i].close()
+  })
+}
+
+/** The title, as a sticker of its own with an outline, shrunk to fit; `onPhoto` keeps it readable over a picture. */
+function drawCoverTitle(ctx: CanvasRenderingContext2D, title: string, palette: CoverPalette, onPhoto: boolean) {
   const margin = mmToPx(12)
   const maxWidth = PAGE_PX.width - 2 * margin
   let size = mmToPx(13)
@@ -301,8 +360,8 @@ async function drawCover(ctx: CanvasRenderingContext2D, stickers: CoverSticker[]
   const titleY = mmToPx(30)
   ctx.lineWidth = size * 0.28
   ctx.strokeStyle = palette.outline
-  ctx.shadowColor = 'rgba(58, 10, 74, 0.25)'
-  ctx.shadowBlur = mmToPx(1.5)
+  ctx.shadowColor = onPhoto ? 'rgba(20, 10, 30, 0.45)' : 'rgba(58, 10, 74, 0.25)'
+  ctx.shadowBlur = mmToPx(onPhoto ? 2.5 : 1.5)
   ctx.shadowOffsetY = mmToPx(0.8)
   ctx.strokeText(text, PAGE_PX.width / 2, titleY, maxWidth)
   ctx.shadowColor = 'transparent'
@@ -311,42 +370,47 @@ async function drawCover(ctx: CanvasRenderingContext2D, stickers: CoverSticker[]
   const small = mmToPx(3.6)
   ctx.font = `800 ${small}px ${FONT}`
   track(ctx, 0.02, small)
+  if (onPhoto) {
+    ctx.lineWidth = small * 0.45
+    ctx.strokeText('A coloring book', PAGE_PX.width / 2, titleY + mmToPx(10))
+  }
   ctx.fillStyle = palette.accent
   ctx.fillText('A coloring book', PAGE_PX.width / 2, titleY + mmToPx(10))
   track(ctx, 0, small)
   ctx.textAlign = 'start'
+}
 
-  const area = { x: margin, y: mmToPx(50), width: PAGE_PX.width - 2 * margin, height: PAGE_PX.height - mmToPx(50) - margin }
-  if (!stickers.length) {
-    // Nothing to show yet: the app's star stands in.
-    ctx.globalAlpha = 0.9
-    drawLogo(ctx, area.x + area.width / 2, area.y + area.height * 0.42, mmToPx(56), 'color')
-    ctx.globalAlpha = 1
-    return
-  }
+/**
+ * The picture a sticker was made from, filling the whole cover from its middle, with the cover
+ * colour washing in at the top behind the title.
+ */
+async function drawCoverPhoto(ctx: CanvasRenderingContext2D, photo: CoverPhoto, palette: CoverPalette) {
+  const image = await createImageBitmap(photo.blob)
+  const { width: W, height: H } = PAGE_PX
+  const scale = Math.max(W / image.width, H / image.height)
+  ctx.drawImage(image, (W - image.width * scale) / 2, (H - image.height * scale) / 2, image.width * scale, image.height * scale)
+  image.close()
+  const wash = ctx.createLinearGradient(0, 0, 0, H * 0.4)
+  wash.addColorStop(0, withAlpha(palette.paper, 0.75))
+  wash.addColorStop(0.55, withAlpha(palette.paper, 0.3))
+  wash.addColorStop(1, withAlpha(palette.paper, 0))
+  ctx.fillStyle = wash
+  ctx.fillRect(0, 0, W, H * 0.4)
+}
 
-  const images = await Promise.all(
-    stickers.map(async ({ blob, effect }) => {
-      const baked = effect && effect !== 'none' ? await bakeEffect(blob, effect).catch(() => blob) : blob
-      return createImageBitmap(baked)
-    }),
-  )
-  const placements = coverLayout(
-    style.layout,
-    images.map((img) => img.width / img.height),
-    area,
-  )
-  placements.forEach((p, i) => {
-    ctx.save()
-    ctx.translate(p.cx, p.cy)
-    ctx.rotate(p.rotation)
-    ctx.shadowColor = 'rgba(40, 20, 60, 0.28)'
-    ctx.shadowBlur = mmToPx(2)
-    ctx.shadowOffsetY = mmToPx(1)
-    ctx.drawImage(images[i], -p.width / 2, -p.height / 2, p.width, p.height)
-    ctx.restore()
-    images[i].close()
-  })
+/** One sticker, big, filling the space under the title. */
+function drawSingleSticker(ctx: CanvasRenderingContext2D, image: ImageBitmap, area: Box) {
+  const scale = Math.min((area.width * 0.94) / image.width, (area.height * 0.9) / image.height)
+  const w = image.width * scale
+  const h = image.height * scale
+  ctx.save()
+  ctx.translate(area.x + area.width / 2, area.y + area.height * 0.47)
+  ctx.rotate((-3 * Math.PI) / 180)
+  ctx.shadowColor = 'rgba(40, 20, 60, 0.3)'
+  ctx.shadowBlur = mmToPx(3)
+  ctx.shadowOffsetY = mmToPx(1.5)
+  ctx.drawImage(image, -w / 2, -h / 2, w, h)
+  ctx.restore()
 }
 
 /** The back cover: the cover's paper, with the app's mark at the foot. */
@@ -523,12 +587,19 @@ export interface StoredPage {
   hideGuide?: boolean
 }
 
+/** The picture a cover sticker was made from. */
+export interface CoverPhoto {
+  blob: Blob
+}
+
 /** What it takes to draw any side of a book. */
 export interface BookContents {
   title: string
   style: CoverStyle
   pages: StoredPage[]
   stickers: CoverSticker[]
+  /** One sticker on the cover instead of the layout; with `photo`, its picture fills the cover. */
+  cover?: { sticker: CoverSticker; photo?: CoverPhoto }
 }
 
 /** Draws one side of the book. `scale` < 1 makes a smaller picture for previews. */
@@ -539,7 +610,7 @@ export async function renderSide(side: BookSide, book: BookContents, scale = 1):
   ctx.imageSmoothingQuality = 'high'
   switch (side.kind) {
     case 'cover':
-      await drawCover(ctx, book.stickers, book.title, book.style)
+      await drawCover(ctx, book)
       break
     case 'inside-cover':
       drawInsideCover(ctx)

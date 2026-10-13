@@ -132,6 +132,23 @@ export const PrintIcon = () => (
   </Icon>
 )
 
+export const PaletteIcon = () => (
+  <Icon>
+    <path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.8-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z" />
+    <circle cx="7.5" cy="11" r="1" fill="currentColor" />
+    <circle cx="10" cy="7" r="1" fill="currentColor" />
+    <circle cx="15" cy="7.5" r="1" fill="currentColor" />
+  </Icon>
+)
+
+export const ImageIcon = () => (
+  <Icon>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+    <circle cx="9" cy="10" r="1.8" />
+    <path d="M20.5 16l-5-5L5 19.5" />
+  </Icon>
+)
+
 export const PencilIcon = () => (
   <Icon>
     <path d="M15.5 4.5l4 4L9 19H5v-4z" />

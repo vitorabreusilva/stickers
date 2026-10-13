@@ -63,6 +63,15 @@ function cleanSize(raw: unknown): { width: number; height: number } | null {
   return width > 0 && height > 0 ? { width, height } : null
 }
 
+/** A book's single-sticker cover, or null for a layout. */
+function cleanCover(raw: unknown): object | null {
+  const c = raw as Record<string, unknown> | null
+  if (!c || typeof c !== 'object' || c.kind !== 'sticker') return null
+  const stickerId = str(c.stickerId, 64)
+  if (!stickerId) return null
+  return { kind: c.kind, stickerId, ...(c.photo === true && { photo: true }) }
+}
+
 /** Sticker fields that devices from before them don't send. Those devices leave them as they were. */
 const LATER_STICKER_FIELDS = ['ai', 'kind', 'original'] as const
 
@@ -70,8 +79,8 @@ function cleanFolder(raw: unknown): SyncFolder {
   const f = raw as SyncFolder
   const key = str(f?.key, 80)
   const color = str(f?.color, 40)
-  if (!key || !color) throw new BadRequest('Bad folder')
-  return { key, color }
+  if (!key || color === null) throw new BadRequest('Bad folder')
+  return { key, color, ...(f.name !== undefined && { name: optional(f.name, 80) || null }) }
 }
 
 const LEGACY_BOOK_ID = 'default'
@@ -103,6 +112,7 @@ function cleanBook(raw: unknown): SyncBook {
     title: str(b.title, 200) ?? '',
     background: str(b.background, 40) ?? 'cream',
     layout: str(b.layout, 40) ?? 'playful',
+    ...(b.cover !== undefined && { cover: cleanCover(b.cover) }),
     createdAt: int(b.createdAt),
   }
 }
@@ -165,11 +175,17 @@ async function push(db: Db, userId: string, body: SyncPush) {
           },
         })
     }
-    if (newFolders.length) {
+    // Devices that don't know about naming folders leave the name alone.
+    for (const knowsName of [false, true]) {
+      const batch = newFolders.filter((f) => (f.name !== undefined) === knowsName)
+      if (!batch.length) continue
       await tx
         .insert(folders)
-        .values(newFolders.map((f) => ({ ...f, userId })))
-        .onConflictDoUpdate({ target: [folders.userId, folders.key], set: { rev: nextRev, color: sql`excluded.color` } })
+        .values(batch.map((f) => ({ ...f, name: f.name ?? null, userId })))
+        .onConflictDoUpdate({
+          target: [folders.userId, folders.key],
+          set: { rev: nextRev, color: sql`excluded.color`, ...(knowsName && { name: sql`excluded.name` }) },
+        })
     }
     // Devices that don't know about books yet send pages without one. New pages from them go in
     // the first book, and their edits (a new position, say) leave the page in its book. Likewise,
@@ -199,10 +215,13 @@ async function push(db: Db, userId: string, body: SyncPush) {
           },
         })
     }
-    if (newBooks.length) {
+    // Devices that don't know about single-sticker covers leave the cover alone.
+    for (const knowsCover of [false, true]) {
+      const batch = newBooks.filter((b) => (b.cover !== undefined) === knowsCover)
+      if (!batch.length) continue
       await tx
         .insert(books)
-        .values(newBooks.map((b) => ({ ...b, userId, deleted: !!b.deleted })))
+        .values(batch.map((b) => ({ ...b, cover: b.cover ?? null, userId, deleted: !!b.deleted })))
         .onConflictDoUpdate({
           target: [books.userId, books.id],
           set: {
@@ -211,6 +230,7 @@ async function push(db: Db, userId: string, body: SyncPush) {
             title: sql`excluded.title`,
             background: sql`excluded.background`,
             layout: sql`excluded.layout`,
+            ...(knowsCover && { cover: sql`excluded.cover` }),
             createdAt: sql`excluded.created_at`,
           },
         })
@@ -310,7 +330,7 @@ async function pull(db: Db, userId: string, since: number): Promise<SyncPull> {
             },
       )
     } else if (item.kind === 'folder') {
-      result.folders.push({ key: item.row.key, color: item.row.color })
+      result.folders.push({ key: item.row.key, color: item.row.color, name: item.row.name })
     } else if (item.kind === 'page') {
       const { row } = item
       result.book.push(
@@ -332,7 +352,14 @@ async function pull(db: Db, userId: string, since: number): Promise<SyncPull> {
       result.books.push(
         row.deleted
           ? { id: row.id, deleted: true, title: '', background: '', layout: '', createdAt: 0 }
-          : { id: row.id, title: row.title, background: row.background, layout: row.layout, createdAt: row.createdAt },
+          : {
+              id: row.id,
+              title: row.title,
+              background: row.background,
+              layout: row.layout,
+              cover: (row.cover as SyncBook['cover']) ?? null,
+              createdAt: row.createdAt,
+            },
       )
     } else {
       result.settings = { bookTitle: item.row.bookTitle }

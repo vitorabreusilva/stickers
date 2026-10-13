@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BackupSheet } from './components/BackupSheet'
 import { BookPreview } from './components/BookPreview'
 import { BookView } from './components/BookView'
 import { Collection } from './components/Collection'
 import { ColoringStudio } from './components/ColoringStudio'
+import { FolderSettings } from './components/FolderSettings'
 import { FolderView } from './components/FolderView'
 import { LassoEditor } from './components/LassoEditor'
 import { StickerDetail } from './components/StickerDetail'
@@ -12,7 +13,7 @@ import { cutoutPreferred, preloadCutout } from './lib/cutout'
 import { newId, requestPersistentStorage, type StickerRecord } from './lib/db'
 import { signIn, SIGN_IN_ERROR_PARAM } from './lib/account'
 import { canReadClipboard, firstImageFile, readClipboardImage, takeSharedImage } from './lib/device'
-import { folderColor, folderLabel, type FolderKey } from './lib/folders'
+import { folderColor, folderLabel, stickerCount, type FolderKey } from './lib/folders'
 import type { Point } from './lib/geometry'
 import { keepableOriginal, loadImage, type LoadedImage } from './lib/image'
 import { pagesOfSticker } from './lib/books'
@@ -38,7 +39,7 @@ type Screen =
   | { kind: 'folder'; key: FolderKey }
   | { kind: 'coloring'; id: string }
   | { kind: 'book'; id: string; page?: string }
-  | { kind: 'book-preview'; id: string; side: number }
+  | { kind: 'book-preview'; id: string; side: number; customize?: boolean }
 
 export function App() {
   const { stack, push, back, home } = useNavStack<Screen>()
@@ -57,11 +58,90 @@ export function App() {
     () => groups.flatMap((g) => (g.key !== 'new' && isAiKey(g.key) ? [{ key: g.key, ...labels.get(g.key)! }] : [])).filter((f) => f.name),
     [groups, labels],
   )
-  const { colors, setColor } = useFolderColors()
+  const { colors, names, setColor, setName } = useFolderColors()
+  // Covers that show the picture a sticker was made from get it here.
+  const originals = useMemo(
+    () => new Map((stickers ?? []).flatMap((s) => (s.original ? [[s.id, s.original] as const] : []))),
+    [stickers],
+  )
+  const shelf = useMemo(
+    () =>
+      books.books?.map((book) => {
+        const original = book.cover?.photo ? originals.get(book.cover.stickerId) : undefined
+        return original ? { ...book, coverPhoto: { blob: original } } : book
+      }) ?? null,
+    [books.books, originals],
+  )
+
+  /** Downloads the original picture of a sticker made on another device, and keeps it. */
+  const loadOriginal = useCallback(
+    async (id: string) => {
+      const blob = await fetchOriginal(id)
+      if (blob) await attachOriginal(id, blob)
+      return blob
+    },
+    [attachOriginal],
+  )
+  /** Whether a sticker's original picture is here, or can be fetched. */
+  const hasOriginal = (id: string) => {
+    const sticker = stickers?.find((s) => s.id === id)
+    return !!sticker?.original || (!!sticker?.originalSize && account.status === 'signed-in')
+  }
+
+  // A cover showing an original that's still on another device fetches it, once per session.
+  const fetchingOriginals = useRef(new Set<string>())
+  useEffect(() => {
+    if (account.status !== 'signed-in') return
+    for (const book of books.books ?? []) {
+      const id = book.cover?.photo ? book.cover.stickerId : undefined
+      const sticker = id ? stickers?.find((s) => s.id === id) : undefined
+      if (!sticker || sticker.original || !sticker.originalSize || fetchingOriginals.current.has(sticker.id)) continue
+      fetchingOriginals.current.add(sticker.id)
+      loadOriginal(sticker.id).catch((err) => console.warn('Could not fetch an original picture', err))
+    }
+  }, [books.books, stickers, account.status, loadOriginal])
   const [toast, showToast] = useToast()
   const [freshId, setFreshId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
+  const [folderSettings, setFolderSettings] = useState<FolderKey | null>(null)
+  const folderSettingsOpen = useRef(false)
+  folderSettingsOpen.current = folderSettings !== null
+
+  const folderItems = (key: FolderKey) =>
+    key === 'all' ? (stickers ?? []) : (groups.find((g) => g.key === key)?.items ?? [])
+
+  /** Has the AI sort a folder's stickers again, and says where they went. */
+  const resortFolder = async (key: FolderKey) => {
+    const items = folderItems(key)
+    setFolderSettings(null)
+    showToast(`Sorting ${stickerCount(items.length)} again…`)
+    try {
+      const result = await aiFolders.regroup(key === 'all' ? undefined : new Set(items.map((s) => s.id)))
+      if (result === 'busy') return showToast('The AI is busy with your stickers. Try again in a moment.')
+      if (result === 'empty') return showToast("Nothing in here the AI can sort yet. Give it a moment to look at these stickers.")
+      const where = result.map((name) => names.get(aiKey(name)) ?? name)
+      showToast(
+        !where.length
+          ? "The AI couldn't find a better place for these."
+          : where.length === 1
+            ? `Sorted into ${where[0]}`
+            : `Sorted into ${where.slice(0, 2).join(', ')}${where.length > 2 ? ` and ${where.length - 2} more` : ''}`,
+      )
+    } catch {
+      showToast("Couldn't sort the stickers. Try again in a moment.")
+    }
+  }
+
+  /** Why sorting with AI can't happen right now, if it can't. */
+  const resortUnavailable =
+    account.status !== 'signed-in'
+      ? 'Sign in to sort your stickers with AI.'
+      : !aiFolders.available
+        ? "Sorting with AI isn't available right now."
+        : !aiFolders.preferred
+          ? 'Turn on AI folders in Settings to sort with AI.'
+          : undefined
 
   const openImage = useCallback(
     async (blob: Blob) => {
@@ -162,7 +242,10 @@ export function App() {
       }
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') back()
+      if (e.key !== 'Escape') return
+      // A folder's settings sit over the screen; Escape closes them first.
+      if (folderSettingsOpen.current) setFolderSettings(null)
+      else back()
     }
     window.addEventListener('paste', onPaste)
     window.addEventListener('keydown', onKey)
@@ -195,20 +278,16 @@ export function App() {
           />
         )
       case 'folder': {
-        const { emoji, name } = folderLabel(screen.key, sorting, labels)
-        const items =
-          screen.key === 'all' ? (stickers ?? []) : (groups.find((g) => g.key === screen.key)?.items ?? [])
+        const { emoji, name } = folderLabel(screen.key, sorting, labels, names)
         return (
           <FolderView
             key={i}
             name={name}
             emoji={emoji}
-            items={items}
+            items={folderItems(screen.key)}
             color={folderColor(screen.key, colors ?? new Map())}
             freshId={freshId}
-            onColor={(color) =>
-              setColor(screen.key, color).catch(() => showToast("Couldn't save the folder colour"))
-            }
+            onSettings={() => setFolderSettings(screen.key)}
             onOpen={(id) => push({ kind: 'detail', id })}
             onClose={back}
           />
@@ -230,15 +309,7 @@ export function App() {
             onColor={() => push({ kind: 'coloring', id: sticker.id })}
             pages={pagesOfSticker(books.books ?? [], sticker.id)}
             onOpenPage={(bookId, page) => push({ kind: 'book', id: bookId, page })}
-            onLoadOriginal={
-              account.status === 'signed-in'
-                ? async () => {
-                    const blob = await fetchOriginal(sticker.id)
-                    if (blob) await attachOriginal(sticker.id, blob)
-                    return blob
-                  }
-                : undefined
-            }
+            onLoadOriginal={account.status === 'signed-in' ? () => loadOriginal(sticker.id) : undefined}
             onDelete={async () => {
               await remove(sticker.id)
               back()
@@ -263,7 +334,7 @@ export function App() {
         )
       }
       case 'book': {
-        const book = books.books?.find((b) => b.id === screen.id)
+        const book = shelf?.find((b) => b.id === screen.id)
         if (!book) return null
         return (
           <BookView
@@ -275,12 +346,12 @@ export function App() {
               back()
               showToast(`Deleted ${book.title}`)
             }}
-            books={books.books ?? []}
+            books={shelf ?? []}
             onCreateBook={() => books.create()}
             onRemovePage={books.removePage}
             onReorderPages={(ids) => books.reorderPages(book.id, ids)}
             onUpdatePage={books.updatePage}
-            onPreview={(side) => push({ kind: 'book-preview', id: book.id, side })}
+            onPreview={(side, customize) => push({ kind: 'book-preview', id: book.id, side, customize })}
             initialPage={screen.page}
             stickerOf={(id) => stickers?.find((s) => s.id === id)}
             onOpenSticker={(id) => push({ kind: 'detail', id })}
@@ -290,9 +361,20 @@ export function App() {
         )
       }
       case 'book-preview': {
-        const book = books.books?.find((b) => b.id === screen.id)
+        const book = shelf?.find((b) => b.id === screen.id)
         if (!book) return null
-        return <BookPreview key={i} book={book} start={screen.side} onClose={back} />
+        return (
+          <BookPreview
+            key={i}
+            book={book}
+            start={screen.side}
+            customize={screen.customize}
+            hasPhoto={hasOriginal}
+            onUpdate={(patch) => books.update(book.id, patch)}
+            onClose={back}
+            toast={showToast}
+          />
+        )
       }
     }
   }
@@ -310,8 +392,10 @@ export function App() {
         onImage={openImage}
         onPaste={pasteFromClipboard}
         onOpen={(id) => push({ kind: 'detail', id })}
+        names={names}
         onOpenFolder={(key) => push({ kind: 'folder', key })}
-        books={books.books}
+        onFolderMenu={setFolderSettings}
+        books={shelf}
         onOpenBook={(id) => push({ kind: 'book', id })}
         onNewBook={() =>
           books
@@ -333,6 +417,31 @@ export function App() {
           {screenFor(screen, i)}
         </div>
       ))}
+
+      {folderSettings &&
+        (() => {
+          const key = folderSettings
+          const { emoji, name } = folderLabel(key, sorting, labels, names)
+          return (
+            <FolderSettings
+              name={name}
+              autoName={folderLabel(key, sorting, labels).name}
+              emoji={emoji}
+              count={folderItems(key).length}
+              color={folderColor(key, colors ?? new Map())}
+              onColor={(color) => setColor(key, color).catch(() => showToast("Couldn't save the folder colour"))}
+              onRename={
+                key === 'new' ? undefined : (to) => setName(key, to).catch(() => showToast("Couldn't rename the folder"))
+              }
+              resort={
+                key === 'new'
+                  ? undefined
+                  : { run: () => resortFolder(key), busy: aiFolders.busy === 'regrouping', unavailable: resortUnavailable }
+              }
+              onClose={() => setFolderSettings(null)}
+            />
+          )
+        })()}
 
       {backupOpen && (
         <BackupSheet

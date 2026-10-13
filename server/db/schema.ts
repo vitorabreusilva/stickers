@@ -114,7 +114,10 @@ export const folders = pgTable(
     userId: owner(),
     key: text('key').notNull(),
     rev: rev(),
+    /** '' until a colour is picked. */
     color: text('color').notNull(),
+    /** The name the user gave it, if any. */
+    name: text('name'),
   },
   (t) => [primaryKey({ columns: [t.userId, t.key] }), index('folders_rev_idx').on(t.userId, t.rev)],
 )
@@ -148,6 +151,8 @@ export const books = pgTable(
     title: text('title').notNull().default(''),
     background: text('background').notNull().default('cream'),
     layout: text('layout').notNull().default('playful'),
+    /** One sticker on the cover instead of the layout. */
+    cover: jsonb('cover'),
     createdAt: bigint('created_at', { mode: 'number' }).notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.userId, t.id] }), index('books_rev_idx').on(t.userId, t.rev)],

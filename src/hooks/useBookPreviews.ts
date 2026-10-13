@@ -49,19 +49,37 @@ export function bookContents(book: Book): BookContents {
     seen.add(page.stickerId)
     stickers.push({ key: `${page.stickerId}:${page.effect ?? ''}`, blob: page.sticker, effect: page.effect })
   }
+  // A single-sticker cover needs its sticker still in the book; otherwise the layout stands in.
+  const coverSticker = book.cover && stickers.find((s) => s.key.startsWith(`${book.cover!.stickerId}:`))
   return {
     title: book.title,
     style: { background: book.background, layout: book.layout },
     pages: book.pages.map(({ id, page, hideGuide }) => ({ id, page, hideGuide })),
     stickers,
+    ...(book.cover &&
+      coverSticker && {
+        cover: {
+          sticker: coverSticker,
+          ...(book.cover.photo && book.coverPhoto && { photo: book.coverPhoto }),
+        },
+      }),
   }
+}
+
+/** What the front cover shows, as a string. */
+function coverKey(book: BookContents): string {
+  const { cover } = book
+  const art = cover
+    ? `${cover.photo ? 'photo' : 'sticker'}:${cover.sticker.key}`
+    : `${book.style.layout}:${book.stickers.map((s) => s.key).join(',')}`
+  return `cover|${book.title}|${book.style.background}|${art}`
 }
 
 /** What a side shows, as a string: two sides with the same key look the same. */
 function sideKey(side: BookSide, book: BookContents): string {
   switch (side.kind) {
     case 'cover':
-      return `cover|${book.title}|${book.style.background}|${book.style.layout}|${book.stickers.map((s) => s.key).join(',')}`
+      return coverKey(book)
     case 'page':
       {
       const { id, hideGuide } = book.pages[side.index]

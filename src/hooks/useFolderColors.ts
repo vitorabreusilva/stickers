@@ -1,22 +1,26 @@
-import { useCallback, useEffect, useState } from 'react'
-import { collectionEvents, listFolders, saveFolder } from '../lib/db'
-import { isFolderColor, type FolderColor, type FolderKey } from '../lib/folders'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { collectionEvents, listFolders, saveFolder, type FolderRecord } from '../lib/db'
+import { cleanFolderName, isFolderColor, type FolderColor, type FolderKey } from '../lib/folders'
 
-/** Colours the user picked for folders, from IndexedDB. null while loading. */
+/**
+ * How the user dressed up folders, from IndexedDB: the colours they picked and the names they gave
+ * them. `colors` is null while loading.
+ */
 export function useFolderColors() {
-  const [colors, setColors] = useState<ReadonlyMap<string, FolderColor> | null>(null)
+  const [records, setRecords] = useState<ReadonlyMap<string, FolderRecord> | null>(null)
+  const recordsRef = useRef(records)
+  recordsRef.current = records
 
   useEffect(() => {
     let cancelled = false
     const load = () =>
       listFolders()
-        .then((records) => {
-          if (cancelled) return
-          setColors(new Map(records.filter((r) => isFolderColor(r.color)).map((r) => [r.key, r.color])))
+        .then((list) => {
+          if (!cancelled) setRecords(new Map(list.map((r) => [r.key, r])))
         })
         .catch((err) => {
           console.error('Could not load folders', err)
-          if (!cancelled) setColors((current) => current ?? new Map())
+          if (!cancelled) setRecords((current) => current ?? new Map())
         })
     load()
     // Synced in from another device.
@@ -27,11 +31,25 @@ export function useFolderColors() {
     }
   }, [])
 
-  const setColor = useCallback(async (key: FolderKey, color: FolderColor) => {
+  const colors = useMemo(
+    () => records && new Map([...records.values()].flatMap((r) => (isFolderColor(r.color) ? [[r.key, r.color] as const] : []))),
+    [records],
+  )
+  const names = useMemo(
+    () => new Map([...(records?.values() ?? [])].flatMap((r) => (r.name ? [[r.key, r.name] as const] : []))),
+    [records],
+  )
+
+  const save = useCallback(async (key: FolderKey, patch: Omit<FolderRecord, 'key'>) => {
+    const next: FolderRecord = { ...recordsRef.current?.get(key), ...patch, key }
+    if (!next.name) delete next.name
     // Show it straight away; the swatch should feel instant.
-    setColors((current) => new Map(current ?? []).set(key, color))
-    await saveFolder({ key, color })
+    setRecords((current) => new Map(current ?? []).set(key, next))
+    await saveFolder(next)
   }, [])
 
-  return { colors, setColor }
+  const setColor = useCallback((key: FolderKey, color: FolderColor) => save(key, { color }), [save])
+  const setName = useCallback((key: FolderKey, name: string) => save(key, { name: cleanFolderName(name) }), [save])
+
+  return { colors, names, setColor, setName }
 }
