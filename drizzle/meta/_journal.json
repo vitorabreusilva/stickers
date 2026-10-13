@@ -29,6 +29,13 @@
       "when": 1791846195297,
       "tag": "0003_sticker_ai",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791911844496,
+      "tag": "0004_folder_names_and_covers",
+      "breakpoints": true
     }
   ]
 }

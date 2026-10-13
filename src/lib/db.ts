@@ -1,8 +1,9 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import { LEGACY_BOOK_ID, type CoverBackground, type CoverLayout } from './books'
+import { LEGACY_BOOK_ID, type BookCover, type CoverBackground, type CoverLayout } from './books'
 import type { ColoringDetail } from './coloring'
 import type { FolderColor, FolderKey } from './folders'
 import type { StickerEffect } from './effects'
+import type { Rect } from './geometry'
 import type { StickerAi } from './smart-groups'
 import type { StickerAnalysis, TopicId } from './topics'
 
@@ -23,12 +24,19 @@ export interface StickerRecord {
   effect?: StickerEffect
   /** What the AI says it shows, and the AI folder it's in. Only when signed in to a server with AI keys. */
   ai?: StickerAi
+  /** The picture it was cut from, made smaller, for book covers. Stickers made before don't have one. */
+  source?: Blob
+  /** Where the sticker sits in `source`, as fractions of its width and height. */
+  sourceRect?: Rect
 }
 
 /** How the user dressed up a folder in the collection. */
 export interface FolderRecord {
   key: FolderKey
-  color: FolderColor
+  /** Missing until a colour is picked. */
+  color?: FolderColor
+  /** A name the user gave it, shown instead of the one it gets automatically. */
+  name?: string
 }
 
 /** A coloring book: its title and how its cover looks. Its pages point at it. */
@@ -37,6 +45,8 @@ export interface BookRecord {
   title: string
   background: CoverBackground
   layout: CoverLayout
+  /** One sticker on the cover instead of `layout`. */
+  cover?: BookCover
   createdAt: number
 }
 
@@ -394,7 +404,8 @@ export async function applyRemote(changes: {
     } else {
       const blob = change.record.blob ?? current?.blob
       if (!blob) continue
-      await store.put({ ...change.record, blob })
+      const source = change.record.source ?? current?.source
+      await store.put({ ...change.record, blob, ...(source && { source }) })
     }
     changed = true
   }

@@ -33,15 +33,25 @@ export function folderColor(key: FolderKey, saved: ReadonlyMap<string, FolderCol
   return saved.get(key) ?? defaultFolderColor(key)
 }
 
-/** `labels` names the AI folders (see aiFolderLabels). */
+/** Longest name a folder can be given. */
+export const MAX_FOLDER_NAME = 40
+
+/** `labels` names the AI folders (see aiFolderLabels); `names` are the ones the user gave folders. */
 export function folderLabel(
   key: FolderKey,
   sorting: boolean,
   labels: ReadonlyMap<string, { name: string; emoji: string }> = new Map(),
+  names: ReadonlyMap<string, string> = new Map(),
 ): { emoji: string; name: string } {
-  if (key === 'all') return { emoji: '🗂️', name: 'All stickers' }
   if (key === 'new') return { emoji: '⏳', name: sorting ? 'Sorting…' : 'Not sorted yet' }
-  return groupLabel(key, labels)
+  const label = key === 'all' ? { emoji: '🗂️', name: 'All stickers' } : groupLabel(key, labels)
+  const name = names.get(key)
+  return name ? { ...label, name } : label
+}
+
+/** A name typed for a folder, tidied; '' means "go back to the automatic name". */
+export function cleanFolderName(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().slice(0, MAX_FOLDER_NAME)
 }
 
 /** How many stickers peek out of a folder. */

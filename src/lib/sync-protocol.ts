@@ -4,8 +4,8 @@
 import type { EncodedAnalysis } from './codec'
 
 /** Pictures are uploaded on their own, before the records that point at them. */
-export type ImageKind = 'sticker' | 'book-page' | 'book-sticker'
-export const IMAGE_KINDS: readonly ImageKind[] = ['sticker', 'book-page', 'book-sticker']
+export type ImageKind = 'sticker' | 'sticker-source' | 'book-page' | 'book-sticker'
+export const IMAGE_KINDS: readonly ImageKind[] = ['sticker', 'sticker-source', 'book-page', 'book-sticker']
 export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 /** Vercel Functions take request bodies up to 4.5 MB. */
 export const MAX_IMAGE_BYTES = 4_000_000
@@ -23,11 +23,19 @@ export interface SyncSticker {
   effect?: string | null
   /** What the AI says it shows, and its AI folder (see smart-groups). Missing from devices that haven't updated. */
   ai?: object | null
+  /**
+   * Where the sticker sits in the picture it was cut from, which is uploaded as 'sticker-source'.
+   * null when there's no such picture; missing from devices that haven't updated.
+   */
+  sourceRect?: { x: number; y: number; width: number; height: number } | null
 }
 
 export interface SyncFolder {
   key: string
+  /** '' until a colour is picked. */
   color: string
+  /** The name the user gave it; '' or null for none. Missing from devices that haven't updated. */
+  name?: string | null
 }
 
 export interface SyncBook {
@@ -36,6 +44,8 @@ export interface SyncBook {
   title: string
   background: string
   layout: string
+  /** One sticker on the cover instead of the layout (see BookCover). Missing from devices that haven't updated. */
+  cover?: object | null
   createdAt: number
 }
 

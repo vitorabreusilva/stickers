@@ -2,14 +2,22 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { bookSides, bookSpreads, type BookSide } from '../lib/book-layout'
 import { bookContents, useBookPreviews } from '../hooks/useBookPreviews'
 import type { Book } from '../hooks/useColoringBooks'
+import type { BookRecord } from '../lib/db'
 import { sideLabel } from './BookView'
-import { ChevronLeftIcon, ChevronRightIcon, CloseIcon } from './icons'
+import { CoverEditor } from './CoverEditor'
+import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, PaletteIcon } from './icons'
 
 interface Props {
   book: Book
   /** The side to open at. */
   start: number
+  /** Opens at the cover with its options showing. */
+  customize?: boolean
+  /** Whether the picture a sticker was cut from is on this device. */
+  hasPhoto: (stickerId: string) => boolean
+  onUpdate: (patch: Partial<Omit<BookRecord, 'id'>>) => Promise<void>
   onClose: () => void
+  toast: (message: string) => void
 }
 
 const WIDE = '(min-aspect-ratio: 1/1) and (min-width: 560px)'
@@ -34,16 +42,18 @@ function spreadLabel(sides: BookSide[], spread: number[]) {
 }
 
 /** Leafs through a book as it will print: facing pages on wide screens, one at a time on narrow ones. */
-export function BookPreview({ book, start, onClose }: Props) {
+export function BookPreview({ book, start, customize = false, hasPhoto, onUpdate, onClose, toast }: Props) {
   const contents = useMemo(() => bookContents(book), [book])
   const sides = useMemo(() => bookSides(book.pages.length), [book.pages.length])
   const spreads = useMemo(() => bookSpreads(sides.length), [sides.length])
   const previews = useBookPreviews(contents, sides)
   const wide = useMatchMedia(WIDE)
   const [choice, setChoice] = useState<'spreads' | 'single' | null>(null)
-  const mode = choice ?? (wide ? 'spreads' : 'single')
+  // Customizing shows the cover on its own, with its options under it.
+  const [editing, setEditing] = useState(customize)
+  const mode = editing ? 'single' : (choice ?? (wide ? 'spreads' : 'single'))
   // Where we are, as a side, so switching between spreads and single pages keeps the place.
-  const [side, setSide] = useState(() => Math.min(Math.max(0, start), sides.length - 1))
+  const [side, setSide] = useState(() => (customize ? 0 : Math.min(Math.max(0, start), sides.length - 1)))
   const [direction, setDirection] = useState<1 | -1>(1)
 
   const at = Math.min(side, sides.length - 1)
@@ -53,6 +63,7 @@ export function BookPreview({ book, start, onClose }: Props) {
   const total = mode === 'spreads' ? spreads.length : sides.length
 
   const go = (by: 1 | -1) => {
+    if (editing) return
     const next = position + by
     if (next < 0 || next >= total) return
     setDirection(by)
@@ -87,7 +98,7 @@ export function BookPreview({ book, start, onClose }: Props) {
   const lone = mode === 'spreads' && shown.length === 1 ? (shown[0] === 0 ? 'right' : 'left') : null
 
   return (
-    <div className="viewer" role="dialog" aria-modal="true" aria-label="Book preview">
+    <div className={`viewer${editing ? ' viewer-editing' : ''}`} role="dialog" aria-modal="true" aria-label="Book preview">
       <header className="viewer-bar">
         <button className="icon-btn viewer-btn" onClick={onClose} aria-label="Close preview">
           <CloseIcon />
@@ -95,14 +106,18 @@ export function BookPreview({ book, start, onClose }: Props) {
         <p className="viewer-title" aria-live="polite">
           {spreadLabel(sides, shown)}
         </p>
-        <div className="segmented viewer-mode" role="radiogroup" aria-label="View">
-          <button role="radio" aria-checked={mode === 'spreads'} className={mode === 'spreads' ? 'active' : ''} onClick={() => setChoice('spreads')}>
-            Spreads
-          </button>
-          <button role="radio" aria-checked={mode === 'single'} className={mode === 'single' ? 'active' : ''} onClick={() => setChoice('single')}>
-            Pages
-          </button>
-        </div>
+        {editing ? (
+          <span className="icon-btn-spacer" />
+        ) : (
+          <div className="segmented viewer-mode" role="radiogroup" aria-label="View">
+            <button role="radio" aria-checked={mode === 'spreads'} className={mode === 'spreads' ? 'active' : ''} onClick={() => setChoice('spreads')}>
+              Spreads
+            </button>
+            <button role="radio" aria-checked={mode === 'single'} className={mode === 'single' ? 'active' : ''} onClick={() => setChoice('single')}>
+              Pages
+            </button>
+          </div>
+        )}
       </header>
 
       <div className="viewer-stage" onPointerDown={onPointerDown} onPointerUp={onPointerUp} onPointerCancel={() => (swipe.current = null)}>
@@ -124,17 +139,34 @@ export function BookPreview({ book, start, onClose }: Props) {
         </div>
       </div>
 
-      <footer className="viewer-nav">
-        <button className="icon-btn viewer-btn" onClick={() => go(-1)} disabled={position === 0} aria-label="Previous">
-          <ChevronLeftIcon />
-        </button>
-        <span className="viewer-count">
-          {position + 1} / {total}
-        </span>
-        <button className="icon-btn viewer-btn" onClick={() => go(1)} disabled={position === total - 1} aria-label="Next">
-          <ChevronRightIcon />
-        </button>
-      </footer>
+      {editing ? (
+        <CoverEditor book={book} hasPhoto={hasPhoto} onUpdate={onUpdate} onDone={() => setEditing(false)} toast={toast} />
+      ) : (
+        <footer className="viewer-foot">
+          {shown.includes(0) && (
+            <button
+              className="btn btn-ghost-dark viewer-customize"
+              onClick={() => {
+                setSide(0)
+                setEditing(true)
+              }}
+            >
+              <PaletteIcon /> Customize cover
+            </button>
+          )}
+          <div className="viewer-nav">
+            <button className="icon-btn viewer-btn" onClick={() => go(-1)} disabled={position === 0} aria-label="Previous">
+              <ChevronLeftIcon />
+            </button>
+            <span className="viewer-count">
+              {position + 1} / {total}
+            </span>
+            <button className="icon-btn viewer-btn" onClick={() => go(1)} disabled={position === total - 1} aria-label="Next">
+              <ChevronRightIcon />
+            </button>
+          </div>
+        </footer>
+      )}
     </div>
   )
 }

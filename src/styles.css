@@ -188,7 +188,8 @@ button {
   margin-top: 8px;
 }
 
-.home-section > h2 {
+.home-section > h2,
+.home-section-head h2 {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -198,11 +199,41 @@ button {
   letter-spacing: -0.01em;
 }
 
+/* A heading with a link on the far side. */
+.home-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-section-head h2 {
+  margin-right: 0;
+}
+
+.see-all {
+  margin: 14px 0 0;
+  padding: 6px 4px 6px 12px;
+  border: 0;
+  background: none;
+  color: var(--violet);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.see-all::after {
+  content: ' ›';
+}
+
+/*
+ * A scroller clips whatever pokes out of it, in both directions, so the padding leaves room for
+ * the stickers' shadows (and the lift on hover); the negative margin takes that room back.
+ */
 .latest {
   display: flex;
   gap: 12px;
-  margin: 0 -16px;
-  padding: 10px 16px 12px;
+  margin: -6px -16px -18px;
+  padding: 16px 16px 30px;
   overflow-x: auto;
   scroll-snap-type: x proximity;
   scroll-padding-inline: 16px;
@@ -248,6 +279,9 @@ button {
 .latest-item .sticker-art {
   position: absolute;
   inset: 12px;
+  /* The inset sizes it; .sticker-art's own 100% would push it out past the card. */
+  width: auto;
+  height: auto;
   -webkit-touch-callout: none;
 }
 
@@ -710,10 +744,11 @@ button {
 .folder-view-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   height: 52px;
 }
 
-.folder-view-back {
+.folder-view-btn {
   background: var(--surface);
   box-shadow: inset 0 0 0 1.5px var(--line);
 }
@@ -743,7 +778,7 @@ button {
 }
 
 .folder-hero p {
-  margin: 2px 0 14px;
+  margin: 2px 0 4px;
   font-size: 14px;
   font-weight: 700;
   opacity: 0.7;
@@ -850,6 +885,8 @@ button {
 .grid-item .sticker-art {
   position: absolute;
   inset: 6px;
+  width: auto;
+  height: auto;
   -webkit-touch-callout: none;
 }
 
@@ -2108,31 +2145,6 @@ button.paper {
   color: #fff;
 }
 
-.cover-options {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 12px 18px;
-  margin: 0 auto 18px;
-}
-
-.cover-option {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 14px 8px 16px;
-  border-radius: 999px;
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1.5px var(--line);
-}
-
-.cover-option-label {
-  color: var(--ink-soft);
-  font-size: 14px;
-  font-weight: 700;
-}
-
 .cover-swatches {
   flex-wrap: wrap;
   gap: 8px;
@@ -2142,19 +2154,6 @@ button.paper {
 .cover-swatches .swatch {
   width: 26px;
   height: 26px;
-}
-
-.cover-layouts {
-  flex-wrap: wrap;
-  justify-content: center;
-  border-radius: 24px;
-}
-
-.cover-layouts button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding-inline: 12px;
 }
 
 .layout-glyph {
@@ -2289,10 +2288,23 @@ button.paper {
   padding: calc(var(--safe-top) + 8px) 16px 8px;
 }
 
+.viewer-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 16px calc(var(--safe-bottom) + 14px);
+}
+
 .viewer-nav {
   justify-content: center;
   gap: 18px;
-  padding: 8px 16px calc(var(--safe-bottom) + 14px);
+  padding: 8px 0 0;
+}
+
+.viewer-customize {
+  min-height: 42px;
+  padding: 8px 18px;
+  font-size: 15px;
 }
 
 .viewer-btn {
@@ -2362,6 +2374,15 @@ button.paper {
   display: flex;
   height: var(--page-h);
   animation: leaf 0.32s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* Customizing: the cover fills what the options under it leave. */
+.viewer-editing .viewer-stage {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.viewer-editing .viewer-spread {
+  height: min(100%, var(--page-h));
 }
 
 .viewer-spreads {
@@ -2614,4 +2635,269 @@ button.paper {
   .folder-sticker {
     transition-delay: 0s !important;
   }
+}
+
+/* Folder settings */
+
+.folder-settings {
+  gap: 14px;
+}
+
+.folder-settings .sheet-header h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-settings-count {
+  margin: -14px 0 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.folder-settings-name {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.folder-settings-name label,
+.folder-settings-label {
+  padding-left: 4px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.folder-settings-field {
+  position: relative;
+}
+
+.folder-settings-name input {
+  width: 100%;
+  padding: 12px 84px 12px 16px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.folder-settings-name input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 2.5px var(--violet);
+}
+
+.folder-settings-reset {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--violet);
+  font-size: 14px;
+  font-weight: 800;
+  transform: translateY(-50%);
+}
+
+.folder-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 12px 12px;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.folder-settings-row .swatches {
+  color: var(--ink);
+}
+
+.folder-settings-resort {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.folder-settings-resort .btn svg {
+  color: var(--violet);
+}
+
+.folder-settings-resort p {
+  margin: 0 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
+}
+
+/* Customizing a cover, under its preview */
+
+.cover-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 560px;
+  max-height: 48dvh;
+  margin: 0 auto;
+  padding: 14px 16px calc(var(--safe-bottom) + 14px);
+  border-radius: 24px 24px 0 0;
+  background: rgba(255, 255, 255, 0.08);
+  animation: slide-up 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.05);
+}
+
+.cover-editor-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for the swatches' selection rings. */
+  margin: -6px;
+  padding: 6px;
+}
+
+.cover-editor-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+}
+
+.cover-editor-label {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.cover-editor .cover-swatches {
+  color: #fff;
+}
+
+.cover-editor-layouts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+@media (min-width: 480px) {
+  .cover-editor-layouts {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+.cover-editor-layouts button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.cover-editor-layouts button .layout-glyph {
+  width: 22px;
+  height: 22px;
+}
+
+.cover-editor-layouts button.active {
+  background: #fff;
+  color: #1f1830;
+}
+
+.cover-editor-layouts button:disabled {
+  opacity: 0.35;
+}
+
+.cover-editor-stickers {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  padding: 4px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.cover-editor-stickers button {
+  flex: none;
+  width: 58px;
+  height: 58px;
+  padding: 6px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cover-editor-stickers button.active {
+  box-shadow: inset 0 0 0 2.5px #fff;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.cover-editor-stickers img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.cover-editor-photo {
+  max-width: none;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  color: #fff;
+}
+
+.cover-editor-photo svg {
+  color: #ffd23f;
+}
+
+.cover-editor-photo small {
+  display: block;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.cover-editor-photo:disabled {
+  opacity: 0.6;
+}
+
+.cover-editor-photo .switch {
+  flex: none;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.cover-editor-hint {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.cover-editor-done {
+  flex: none;
+}
+
+.book-cover-btn {
+  display: flex;
+  margin: 0 auto 18px;
 }

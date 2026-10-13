@@ -41,6 +41,7 @@ function cleanSticker(raw: unknown): SyncSticker {
   if (analysis && JSON.stringify(analysis).length > 64_000) throw new BadRequest('Analysis too large')
   const ai = s.ai && typeof s.ai === 'object' && !Array.isArray(s.ai) ? s.ai : null
   if (ai && JSON.stringify(ai).length > 4_000) throw new BadRequest('AI description too large')
+  const sourceRect = cleanRect(s.sourceRect)
   return {
     id: s.id,
     width: int(s.width),
@@ -50,15 +51,33 @@ function cleanSticker(raw: unknown): SyncSticker {
     topic: optional(s.topic, 40),
     effect: optional(s.effect, 40),
     ...(s.ai !== undefined && { ai }),
+    ...(s.sourceRect !== undefined && { sourceRect }),
   }
+}
+
+/** A rectangle of fractions, or null. */
+function cleanRect(raw: unknown): SyncSticker['sourceRect'] {
+  const r = raw as Record<string, unknown> | null
+  if (!r || typeof r !== 'object') return null
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(2, Math.max(-1, v)) : 0)
+  return { x: n(r.x), y: n(r.y), width: n(r.width), height: n(r.height) }
+}
+
+/** A book's single-sticker cover, or null for a layout. */
+function cleanCover(raw: unknown): object | null {
+  const c = raw as Record<string, unknown> | null
+  if (!c || typeof c !== 'object' || (c.kind !== 'sticker' && c.kind !== 'stamp')) return null
+  const stickerId = str(c.stickerId, 64)
+  if (!stickerId) return null
+  return { kind: c.kind, stickerId, ...(c.photo === true && { photo: true }) }
 }
 
 function cleanFolder(raw: unknown): SyncFolder {
   const f = raw as SyncFolder
   const key = str(f?.key, 80)
   const color = str(f?.color, 40)
-  if (!key || !color) throw new BadRequest('Bad folder')
-  return { key, color }
+  if (!key || color === null) throw new BadRequest('Bad folder')
+  return { key, color, ...(f.name !== undefined && { name: optional(f.name, 80) || null }) }
 }
 
 const LEGACY_BOOK_ID = 'default'
@@ -90,6 +109,7 @@ function cleanBook(raw: unknown): SyncBook {
     title: str(b.title, 200) ?? '',
     background: str(b.background, 40) ?? 'cream',
     layout: str(b.layout, 40) ?? 'playful',
+    ...(b.cover !== undefined && { cover: cleanCover(b.cover) }),
     createdAt: int(b.createdAt),
   }
 }
@@ -114,13 +134,14 @@ async function push(db: Db, userId: string, body: SyncPush) {
     // reading "everything after N" can't skip a row that commits late.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`)
 
-    // Devices that don't know about AI folders leave what the AI said about a sticker alone.
-    for (const knowsAi of [false, true]) {
-      const batch = newStickers.filter((s) => (s.ai !== undefined) === knowsAi)
+    // Devices that don't know about AI folders leave what the AI said about a sticker alone, and
+    // likewise for the picture a sticker was cut from.
+    for (const knowsAi of [false, true]) for (const knowsSource of [false, true]) {
+      const batch = newStickers.filter((s) => (s.ai !== undefined) === knowsAi && (s.sourceRect !== undefined) === knowsSource)
       if (!batch.length) continue
       await tx
         .insert(stickers)
-        .values(batch.map((s) => ({ ...s, ai: s.ai ?? null, userId, deleted: !!s.deleted })))
+        .values(batch.map((s) => ({ ...s, ai: s.ai ?? null, sourceRect: s.sourceRect ?? null, userId, deleted: !!s.deleted })))
         .onConflictDoUpdate({
           target: [stickers.userId, stickers.id],
           set: {
@@ -133,14 +154,21 @@ async function push(db: Db, userId: string, body: SyncPush) {
             topic: sql`excluded.topic`,
             effect: sql`excluded.effect`,
             ...(knowsAi && { ai: sql`excluded.ai` }),
+            ...(knowsSource && { sourceRect: sql`excluded.source_rect` }),
           },
         })
     }
-    if (newFolders.length) {
+    // Devices that don't know about naming folders leave the name alone.
+    for (const knowsName of [false, true]) {
+      const batch = newFolders.filter((f) => (f.name !== undefined) === knowsName)
+      if (!batch.length) continue
       await tx
         .insert(folders)
-        .values(newFolders.map((f) => ({ ...f, userId })))
-        .onConflictDoUpdate({ target: [folders.userId, folders.key], set: { rev: nextRev, color: sql`excluded.color` } })
+        .values(batch.map((f) => ({ ...f, name: f.name ?? null, userId })))
+        .onConflictDoUpdate({
+          target: [folders.userId, folders.key],
+          set: { rev: nextRev, color: sql`excluded.color`, ...(knowsName && { name: sql`excluded.name` }) },
+        })
     }
     // Devices that don't know about books yet send pages without one. New pages from them go in
     // the first book, and their edits (a new position, say) leave the page in its book. Likewise,
@@ -170,10 +198,13 @@ async function push(db: Db, userId: string, body: SyncPush) {
           },
         })
     }
-    if (newBooks.length) {
+    // Devices that don't know about single-sticker covers leave the cover alone.
+    for (const knowsCover of [false, true]) {
+      const batch = newBooks.filter((b) => (b.cover !== undefined) === knowsCover)
+      if (!batch.length) continue
       await tx
         .insert(books)
-        .values(newBooks.map((b) => ({ ...b, userId, deleted: !!b.deleted })))
+        .values(batch.map((b) => ({ ...b, cover: b.cover ?? null, userId, deleted: !!b.deleted })))
         .onConflictDoUpdate({
           target: [books.userId, books.id],
           set: {
@@ -182,6 +213,7 @@ async function push(db: Db, userId: string, body: SyncPush) {
             title: sql`excluded.title`,
             background: sql`excluded.background`,
             layout: sql`excluded.layout`,
+            ...(knowsCover && { cover: sql`excluded.cover` }),
             createdAt: sql`excluded.created_at`,
           },
         })
@@ -198,7 +230,9 @@ async function push(db: Db, userId: string, body: SyncPush) {
   // Deleted records keep a tombstone row, but their pictures can go. Best effort: a leftover file
   // costs a little storage, not correctness.
   const gone = [
-    ...newStickers.filter((s) => s.deleted).map((s) => imagePath(userId, 'sticker', s.id)),
+    ...newStickers
+      .filter((s) => s.deleted)
+      .flatMap((s) => [imagePath(userId, 'sticker', s.id), imagePath(userId, 'sticker-source', s.id)]),
     ...newPages
       .filter((p) => p.deleted)
       .flatMap((p) => [imagePath(userId, 'book-page', p.id), imagePath(userId, 'book-sticker', p.id)]),
@@ -274,10 +308,11 @@ async function pull(db: Db, userId: string, since: number): Promise<SyncPull> {
               topic: row.topic,
               effect: row.effect,
               ai: (row.ai as SyncSticker['ai']) ?? null,
+              sourceRect: (row.sourceRect as SyncSticker['sourceRect']) ?? null,
             },
       )
     } else if (item.kind === 'folder') {
-      result.folders.push({ key: item.row.key, color: item.row.color })
+      result.folders.push({ key: item.row.key, color: item.row.color, name: item.row.name })
     } else if (item.kind === 'page') {
       const { row } = item
       result.book.push(
@@ -299,7 +334,14 @@ async function pull(db: Db, userId: string, since: number): Promise<SyncPull> {
       result.books.push(
         row.deleted
           ? { id: row.id, deleted: true, title: '', background: '', layout: '', createdAt: 0 }
-          : { id: row.id, title: row.title, background: row.background, layout: row.layout, createdAt: row.createdAt },
+          : {
+              id: row.id,
+              title: row.title,
+              background: row.background,
+              layout: row.layout,
+              cover: (row.cover as SyncBook['cover']) ?? null,
+              createdAt: row.createdAt,
+            },
       )
     } else {
       result.settings = { bookTitle: item.row.bookTitle }

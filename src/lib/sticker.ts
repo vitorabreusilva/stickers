@@ -223,3 +223,29 @@ export async function createSticker(
   const blob = await canvasToBlob(result)
   return { blob, width: bounds.width, height: bounds.height }
 }
+
+// The picture a sticker was cut from is kept this big, as a JPEG: enough to fill a printed cover,
+// small enough to sync.
+const SOURCE_MAX = 2048
+
+/** The picture a sticker was cut from, made smaller, and where the cut sits in it (as fractions). */
+export async function sourcePicture(image: LoadedImage, loop: Point[]): Promise<{ source: Blob; sourceRect: Rect }> {
+  const scale = Math.min(1, SOURCE_MAX / Math.max(image.width, image.height))
+  const canvas = createCanvas(Math.max(1, Math.round(image.width * scale)), Math.max(1, Math.round(image.height * scale)))
+  const ctx = canvas.getContext('2d')!
+  ctx.imageSmoothingQuality = 'high'
+  // On white, so transparent pictures don't turn black as a JPEG.
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(image.source, 0, 0, canvas.width, canvas.height)
+  const box = intersectRect(boundingBox(loop), { x: 0, y: 0, width: image.width, height: image.height })
+  return {
+    source: await canvasToBlob(canvas, 'image/jpeg'),
+    sourceRect: {
+      x: box.x / image.width,
+      y: box.y / image.height,
+      width: Math.max(1, box.width) / image.width,
+      height: Math.max(1, box.height) / image.height,
+    },
+  }
+}

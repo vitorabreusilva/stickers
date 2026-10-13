@@ -1,6 +1,6 @@
 import { parseStickerAi } from './smart-groups'
 import { base64ToBytes, bytesToBase64, decodeAnalysis, encodeAnalysis, type EncodedAnalysis } from './codec'
-import { DEFAULT_STYLE, isCoverBackground, isCoverLayout } from './books'
+import { DEFAULT_STYLE, isCoverBackground, isCoverLayout, parseBookCover } from './books'
 import type { BookPageRecord, BookRecord, FolderRecord, StickerRecord } from './db'
 
 /**
@@ -72,6 +72,7 @@ export async function createBackup(contents: BackupContents, now = new Date()): 
       JSON.stringify({
         ...sticker,
         blob: await encodeBlob(sticker.blob),
+        source: sticker.source && (await encodeBlob(sticker.source)),
         analysis: sticker.analysis && encodeAnalysis(sticker.analysis),
       }),
     )
@@ -100,9 +101,19 @@ export async function readBackup(file: Blob): Promise<BackupContents> {
 
   const stickers = (data.stickers ?? []).map((s) => {
     if (typeof s.id !== 'string') throw new BackupError('The backup has a broken sticker')
-    const sticker = { ...s, blob: decodeBlob(s.blob, 'a sticker'), analysis: decodeAnalysis(s.analysis), ai: parseStickerAi(s.ai) }
+    const sticker = {
+      ...s,
+      blob: decodeBlob(s.blob, 'a sticker'),
+      source: s.source && decodeBlob(s.source, 'a sticker'),
+      analysis: decodeAnalysis(s.analysis),
+      ai: parseStickerAi(s.ai),
+    }
     if (!sticker.analysis) delete sticker.analysis
     if (!sticker.ai) delete sticker.ai
+    if (!sticker.source || !sticker.sourceRect) {
+      delete sticker.source
+      delete sticker.sourceRect
+    }
     return sticker as StickerRecord
   })
   const book = (data.book ?? []).map((p) => {
@@ -121,6 +132,7 @@ export async function readBackup(file: Blob): Promise<BackupContents> {
             title: typeof b.title === 'string' ? b.title : '',
             background: isCoverBackground(b.background) ? b.background : DEFAULT_STYLE.background,
             layout: isCoverLayout(b.layout) ? b.layout : DEFAULT_STYLE.layout,
+            ...(parseBookCover(b.cover) && { cover: parseBookCover(b.cover) }),
             createdAt: typeof b.createdAt === 'number' ? b.createdAt : 0,
           },
         ]

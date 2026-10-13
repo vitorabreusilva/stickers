@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { storedBookTitle } from '../lib/book-title'
+import type { CoverPhoto } from '../lib/book-render'
 import { DEFAULT_STYLE, DEFAULT_TITLE, LEGACY_BOOK_ID, newBookTitle } from '../lib/books'
 import {
   bookIdOf,
@@ -24,6 +25,8 @@ export interface BookPage extends BookPageRecord {
 
 export interface Book extends BookRecord {
   pages: BookPage[]
+  /** The picture the cover sticker was cut from, when the cover shows it (see BookCover's `photo`). */
+  coverPhoto?: CoverPhoto
 }
 
 /**
@@ -134,8 +137,9 @@ export function useColoringBooks() {
   const update = useCallback(async (id: string, patch: Partial<Omit<BookRecord, 'id'>>) => {
     const current = booksRef.current?.find((b) => b.id === id)
     if (!current) return
-    const { pages: _, ...record } = current
-    const next = { ...record, ...patch }
+    const { pages: _, coverPhoto: __, ...record } = current
+    const next: BookRecord = { ...record, ...patch }
+    if (!next.cover) delete next.cover
     commitRecords([...recordsRef.current.filter((r) => r.id !== id), next])
     await saveBook(next)
   }, [])

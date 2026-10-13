@@ -296,7 +296,7 @@ async function seedVersion1(page: Page, topics: string[]) {
   }, topics)
 }
 
-test('stickers from before folders show up in folders that fan out, open and change colour', async ({ page }) => {
+test('stickers from before folders show up in folders that fan out, open, change colour and get renamed', async ({ page }) => {
   await seedVersion1(page, ['dogs', 'dogs', 'food', 'music'])
   await page.goto('/')
 
@@ -318,8 +318,17 @@ test('stickers from before folders show up in folders that fan out, open and cha
   const folder = page.getByRole('dialog', { name: 'Dogs' })
   await expect(folder.getByRole('button', { name: 'Open sticker' })).toHaveCount(2)
 
-  await folder.getByRole('radio', { name: 'Mint' }).click()
-  await expect(folder.getByRole('radio', { name: 'Mint' })).toHaveAttribute('aria-checked', 'true')
+  // The folder's header is its name and size; colour and name are in its settings.
+  await expect(folder.getByText('2 stickers')).toBeVisible()
+  await expect(folder.getByRole('radio', { name: 'Mint' })).toHaveCount(0)
+  await folder.getByRole('button', { name: 'Folder settings' }).click()
+  const settings = page.getByRole('dialog', { name: 'Folder settings' })
+  await settings.getByRole('radio', { name: 'Mint' }).click()
+  await expect(settings.getByRole('radio', { name: 'Mint' })).toHaveAttribute('aria-checked', 'true')
+  // Sorting again needs the AI, which needs signing in.
+  await expect(settings.getByRole('button', { name: 'Sort again with AI' })).toBeDisabled()
+  await settings.getByRole('button', { name: 'Close' }).click()
+  await expect(settings).toBeHidden()
 
   // Stickers open on top of the folder; back returns to the folder, then to the collection.
   await folder.getByRole('button', { name: 'Open sticker' }).first().click()
@@ -332,9 +341,46 @@ test('stickers from before folders show up in folders that fan out, open and cha
   await expect(folder).toBeHidden()
   await expect(dogs).toHaveAttribute('data-color', 'mint')
 
-  // The colour is saved with the collection.
+  // Right-clicking a folder opens its settings too; a new name sticks, and can be undone.
+  await dogs.click({ button: 'right' })
+  await expect(settings).toBeVisible()
+  await settings.getByLabel('Name').fill('Good boys')
+  await settings.getByLabel('Name').press('Enter')
+  await expect(settings).toBeHidden()
+  const goodBoys = folders.getByRole('button', { name: 'Good boys, 2 stickers' })
+  await expect(goodBoys).toBeVisible()
+  // Saving is quick but not instant; don't reload before it's written.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<string | undefined>((resolve, reject) => {
+            const open = indexedDB.open('stickers')
+            open.onerror = () => reject(open.error)
+            open.onsuccess = () => {
+              const get = open.result.transaction('folders').objectStore('folders').get('dogs')
+              get.onsuccess = () => {
+                resolve(get.result?.name)
+                open.result.close()
+              }
+            }
+          }),
+      ),
+    )
+    .toBe('Good boys')
+
+  // The colour and name are saved with the collection.
   await page.reload()
-  await expect(dogs).toHaveAttribute('data-color', 'mint')
+  await expect(goodBoys).toHaveAttribute('data-color', 'mint')
+  await goodBoys.click({ button: 'right' })
+  await settings.getByRole('button', { name: 'Use “Dogs”' }).click()
+  await settings.getByRole('button', { name: 'Close' }).click()
+  await expect(dogs).toBeVisible()
+
+  // Latest has a way through to every sticker.
+  await page.getByRole('button', { name: 'View all' }).click()
+  await expect(page.getByRole('dialog', { name: 'All stickers' }).getByRole('button', { name: 'Open sticker' })).toHaveCount(4)
+  await page.goBack()
   await folders.getByRole('button', { name: 'All stickers, 4 stickers' }).click()
   const all = page.getByRole('dialog', { name: 'All stickers' })
   await expect(all.getByRole('button', { name: 'Open sticker' })).toHaveCount(4)
@@ -559,9 +605,44 @@ test.describe('coloring book', () => {
     await expect(book.getByRole('img', { name: 'Page 4, blank' })).toBeVisible({ timeout: 20_000 })
     await expect(book.getByRole('img', { name: 'Back cover', exact: true })).toBeVisible({ timeout: 20_000 })
     await book.getByLabel('Title').fill('Sunny Days')
-    await book.getByRole('radiogroup', { name: 'Cover colour' }).getByRole('radio', { name: 'Night' }).click()
-    await book.getByRole('radio', { name: 'Spotlight' }).click()
-    await expect(book.getByRole('radio', { name: 'Spotlight' })).toHaveAttribute('aria-checked', 'true')
+
+    // The cover is customized from its preview: colour, layout, or one sticker on a stamp, and then
+    // the picture the sticker was cut from behind the title.
+    await book.getByRole('button', { name: 'Customize cover' }).click()
+    const coverViewer = page.getByRole('dialog', { name: 'Book preview' })
+    const editor = coverViewer.getByRole('region', { name: 'Customize cover' })
+    await editor.getByRole('radiogroup', { name: 'Cover colour' }).getByRole('radio', { name: 'Night' }).click()
+    await editor.getByRole('radio', { name: 'Spotlight' }).click()
+    await expect(editor.getByRole('radio', { name: 'Spotlight' })).toHaveAttribute('aria-checked', 'true')
+    await expect(editor.getByRole('switch', { name: /original picture/ })).toHaveCount(0)
+    await editor.getByRole('radio', { name: 'Stamp' }).click()
+    await expect(editor.getByRole('radio', { name: 'Sticker for the cover' })).toHaveAttribute('aria-checked', 'true')
+    const photo = editor.getByRole('switch', { name: /original picture/ })
+    await expect(photo).toBeEnabled()
+    const stampCover = await coverViewer.getByRole('img', { name: 'Cover' }).getAttribute('src')
+    await photo.click()
+    await expect(photo).toHaveAttribute('aria-checked', 'true')
+    // The sky-blue picture now fills the cover, right down to its corners.
+    await expect
+      .poll(async () => {
+        const img = coverViewer.getByRole('img', { name: 'Cover' })
+        if ((await img.getAttribute('src')) === stampCover) return false
+        const rgb = await img.evaluate(async (el: HTMLImageElement) => {
+          await el.decode()
+          const canvas = document.createElement('canvas')
+          canvas.width = el.naturalWidth
+          canvas.height = el.naturalHeight
+          const ctx = canvas.getContext('2d')!
+          ctx.drawImage(el, 0, 0)
+          return [...ctx.getImageData(4, canvas.height - 5, 1, 1).data.slice(0, 3)]
+        })
+        return rgb.every((v, i) => Math.abs(v - SKY[i]) < 24)
+      }, { timeout: 20_000 })
+      .toBe(true)
+    await editor.getByRole('button', { name: 'Done' }).click()
+    await expect(editor).toBeHidden()
+    await page.goBack()
+    await expect(coverViewer).toBeHidden()
 
     // The page has no "Colored by" line any more, but a page number at the outside of the foot.
     const pageArt = await book.getByRole('img', { name: 'Page 1', exact: true }).evaluate(async (img: HTMLImageElement) => {
@@ -709,10 +790,11 @@ test('back up a collection and restore it on another device', async ({ page, bro
   await seedVersion1(page, ['dogs', 'dogs', 'food'])
   await page.goto('/')
   const folders = page.getByRole('list', { name: 'Folders' })
-  await folders.getByRole('button', { name: 'Dogs, 2 stickers' }).click()
-  const folder = page.getByRole('dialog', { name: 'Dogs' })
-  await folder.getByRole('radio', { name: 'Mint' }).click()
-  await page.goBack()
+  await folders.getByRole('button', { name: 'Dogs, 2 stickers' }).click({ button: 'right' })
+  const folderSettings = page.getByRole('dialog', { name: 'Folder settings' })
+  await folderSettings.getByRole('radio', { name: 'Mint' }).click()
+  await folderSettings.getByLabel('Name').fill('Pups')
+  await folderSettings.getByRole('button', { name: 'Close' }).click()
 
   await page.getByRole('button', { name: 'Settings' }).click()
   const sheet = page.getByRole('dialog', { name: 'Settings' })
@@ -733,14 +815,10 @@ test('back up a collection and restore it on another device', async ({ page, bro
   await expect(otherSheet.getByText(/This backup has 3 stickers/)).toBeVisible()
   await otherSheet.getByRole('button', { name: 'Restore' }).click()
 
-  // The app reloads with everything in place, folder colour included.
+  // The app reloads with everything in place, folder colour and name included.
   const otherFolders = other.getByRole('list', { name: 'Folders' })
   await expect(otherFolders.getByRole('button', { name: 'All stickers, 3 stickers' })).toBeVisible({ timeout: 10_000 })
-  await otherFolders.getByRole('button', { name: 'Dogs, 2 stickers' }).click()
-  await expect(other.getByRole('dialog', { name: 'Dogs' }).getByRole('radio', { name: 'Mint' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  )
+  await expect(otherFolders.getByRole('button', { name: 'Pups, 2 stickers' })).toHaveAttribute('data-color', 'mint')
   await other.context().close()
 
   // A file that isn't a backup is turned away.

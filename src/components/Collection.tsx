@@ -23,7 +23,11 @@ interface Props {
   onImage: (file: Blob) => void
   onPaste: () => void
   onOpen: (id: string) => void
+  /** Names the user gave folders. */
+  names: ReadonlyMap<string, string>
   onOpenFolder: (key: FolderKey) => void
+  /** Right-click or press and hold on a folder. */
+  onFolderMenu: (key: FolderKey) => void
   /** The coloring books, newest first; null while loading. */
   books: Book[] | null
   onOpenBook: (id: string) => void
@@ -48,7 +52,9 @@ export function Collection({
   onImage,
   onPaste,
   onOpen,
+  names,
   onOpenFolder,
+  onFolderMenu,
   books,
   onOpenBook,
   onNewBook,
@@ -139,7 +145,12 @@ export function Collection({
 
       {count > 0 && (
         <section className="home-section" aria-labelledby="latest-heading">
-          <h2 id="latest-heading">Latest</h2>
+          <div className="home-section-head">
+            <h2 id="latest-heading">Latest</h2>
+            <button className="see-all" onClick={() => onOpenFolder('all')}>
+              View all
+            </button>
+          </div>
           <ul className="latest" aria-label="Latest stickers">
             {latest.map((sticker) => (
               <li key={sticker.id}>
@@ -162,7 +173,7 @@ export function Collection({
           <h2 id="folders-heading">Folders</h2>
           <ul className="folders" aria-label="Folders">
             {folders.map(({ key, items }) => {
-              const { emoji, name } = folderLabel(key, sorting, labels)
+              const { emoji, name } = folderLabel(key, sorting, labels, names)
               return (
                 <li key={key}>
                   <Folder
@@ -172,6 +183,7 @@ export function Collection({
                     color={folderColor(key, colors)}
                     freshId={freshId}
                     onOpen={() => onOpenFolder(key)}
+                    onMenu={() => onFolderMenu(key)}
                   />
                 </li>
               )
