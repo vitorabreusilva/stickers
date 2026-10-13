@@ -17,6 +17,9 @@ const OUTLINE_RATIO: Record<OutlineSize, number> = { none: 0, thin: 0.02, thick:
 const MAX_SIZE = 1024
 const MIN_SIZE = 512
 
+/** How much to scale a crop whose longest side is `longest` px so it comes out at sticker size. */
+export const stickerScale = (longest: number) => Math.min(MAX_SIZE / longest, Math.max(1, MIN_SIZE / longest))
+
 export interface StickerImage {
   blob: Blob
   width: number
@@ -80,7 +83,7 @@ export function cutOut(image: LoadedImage, loop: Point[], subject?: SubjectMask)
   if (crop.width < 1 || crop.height < 1) throw new Error('That loop is outside the picture')
 
   const longest = Math.max(crop.width, crop.height)
-  const scale = Math.min(MAX_SIZE / longest, Math.max(1, MIN_SIZE / longest))
+  const scale = stickerScale(longest)
   const width = Math.max(1, Math.round(crop.width * scale))
   const height = Math.max(1, Math.round(crop.height * scale))
 
@@ -155,7 +158,7 @@ export function backdropCut(image: LoadedImage, loop: Point[]): Cut | null {
   let cut: Cut | null = null
   if (crop.width >= 8 && crop.height >= 8) {
     const longest = Math.max(crop.width, crop.height)
-    const scale = Math.min(MAX_SIZE / longest, Math.max(1, MIN_SIZE / longest))
+    const scale = stickerScale(longest)
     const width = Math.max(1, Math.round(crop.width * scale))
     const height = Math.max(1, Math.round(crop.height * scale))
     const canvas = createCanvas(width, height)
@@ -222,30 +225,4 @@ export async function createSticker(
   result.getContext('2d')!.putImageData(new ImageData(stickered, width, height), -bounds.x, -bounds.y)
   const blob = await canvasToBlob(result)
   return { blob, width: bounds.width, height: bounds.height }
-}
-
-// The picture a sticker was cut from is kept this big, as a JPEG: enough to fill a printed cover,
-// small enough to sync.
-const SOURCE_MAX = 2048
-
-/** The picture a sticker was cut from, made smaller, and where the cut sits in it (as fractions). */
-export async function sourcePicture(image: LoadedImage, loop: Point[]): Promise<{ source: Blob; sourceRect: Rect }> {
-  const scale = Math.min(1, SOURCE_MAX / Math.max(image.width, image.height))
-  const canvas = createCanvas(Math.max(1, Math.round(image.width * scale)), Math.max(1, Math.round(image.height * scale)))
-  const ctx = canvas.getContext('2d')!
-  ctx.imageSmoothingQuality = 'high'
-  // On white, so transparent pictures don't turn black as a JPEG.
-  ctx.fillStyle = '#fff'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.drawImage(image.source, 0, 0, canvas.width, canvas.height)
-  const box = intersectRect(boundingBox(loop), { x: 0, y: 0, width: image.width, height: image.height })
-  return {
-    source: await canvasToBlob(canvas, 'image/jpeg'),
-    sourceRect: {
-      x: box.x / image.width,
-      y: box.y / image.height,
-      width: Math.max(1, box.width) / image.width,
-      height: Math.max(1, box.height) / image.height,
-    },
-  }
 }

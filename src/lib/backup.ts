@@ -25,7 +25,9 @@ interface EncodedBlob {
   base64: string
 }
 
-type Encoded<T> = { [K in keyof T]: T[K] extends Blob ? EncodedBlob : K extends 'analysis' ? EncodedAnalysis : T[K] }
+type Encoded<T> = {
+  [K in keyof T]: NonNullable<T[K]> extends Blob ? EncodedBlob | Exclude<T[K], Blob> : K extends 'analysis' ? EncodedAnalysis : T[K]
+}
 
 interface BackupFile {
   format: typeof BACKUP_FORMAT
@@ -72,7 +74,7 @@ export async function createBackup(contents: BackupContents, now = new Date()): 
       JSON.stringify({
         ...sticker,
         blob: await encodeBlob(sticker.blob),
-        source: sticker.source && (await encodeBlob(sticker.source)),
+        original: sticker.original && (await encodeBlob(sticker.original)),
         analysis: sticker.analysis && encodeAnalysis(sticker.analysis),
       }),
     )
@@ -104,16 +106,13 @@ export async function readBackup(file: Blob): Promise<BackupContents> {
     const sticker = {
       ...s,
       blob: decodeBlob(s.blob, 'a sticker'),
-      source: s.source && decodeBlob(s.source, 'a sticker'),
+      original: s.original && decodeBlob(s.original, 'a sticker'),
       analysis: decodeAnalysis(s.analysis),
       ai: parseStickerAi(s.ai),
     }
     if (!sticker.analysis) delete sticker.analysis
     if (!sticker.ai) delete sticker.ai
-    if (!sticker.source || !sticker.sourceRect) {
-      delete sticker.source
-      delete sticker.sourceRect
-    }
+    if (!sticker.original) delete sticker.original
     return sticker as StickerRecord
   })
   const book = (data.book ?? []).map((p) => {

@@ -13,7 +13,7 @@ interface Props {
   start: number
   /** Opens at the cover with its options showing. */
   customize?: boolean
-  /** Whether the picture a sticker was cut from is on this device. */
+  /** Whether the picture a sticker was made from is here, or can be fetched. */
   hasPhoto: (stickerId: string) => boolean
   onUpdate: (patch: Partial<Omit<BookRecord, 'id'>>) => Promise<void>
   onClose: () => void

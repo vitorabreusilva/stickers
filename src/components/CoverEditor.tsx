@@ -1,28 +1,19 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import {
-  COVER_BACKGROUNDS,
-  COVER_KIND_NAMES,
-  COVER_LAYOUT_NAMES,
-  COVER_LAYOUTS,
-  COVER_PALETTES,
-  type BookCover,
-  type CoverLayout,
-} from '../lib/books'
+import { COVER_BACKGROUNDS, COVER_LAYOUT_NAMES, COVER_LAYOUTS, COVER_PALETTES, type CoverLayout } from '../lib/books'
 import type { BookRecord } from '../lib/db'
 import type { Book } from '../hooks/useColoringBooks'
 import { ImageIcon } from './icons'
 
-/** Every way a cover can look: one of the layouts of all the stickers, or one sticker. */
-type CoverChoice = CoverLayout | BookCover['kind']
+/** Every way a cover can look: one of the layouts of all the stickers, or one sticker (or stamp). */
+type CoverChoice = CoverLayout | 'sticker'
 
-const CHOICES: CoverChoice[] = [...COVER_LAYOUTS, 'sticker', 'stamp']
+const CHOICES: CoverChoice[] = [...COVER_LAYOUTS, 'sticker']
 
-const choiceName = (choice: CoverChoice) =>
-  choice === 'sticker' || choice === 'stamp' ? COVER_KIND_NAMES[choice] : COVER_LAYOUT_NAMES[choice]
+const choiceName = (choice: CoverChoice) => (choice === 'sticker' ? 'Single' : COVER_LAYOUT_NAMES[choice])
 
 interface Props {
   book: Book
-  /** Whether the picture a sticker was cut from is on this device. */
+  /** Whether the picture a sticker was made from is here, or can be fetched. */
   hasPhoto: (stickerId: string) => boolean
   onUpdate: (patch: Partial<Omit<BookRecord, 'id'>>) => Promise<void>
   onDone: () => void
@@ -51,9 +42,9 @@ export function CoverEditor({ book, hasPhoto, onUpdate, onDone, toast }: Props) 
   const update = (patch: Partial<Omit<BookRecord, 'id'>>) => onUpdate(patch).catch(() => toast("Couldn't change the cover"))
 
   const choose = (choice: CoverChoice) => {
-    if (choice === 'sticker' || choice === 'stamp') {
+    if (choice === 'sticker') {
       const stickerId = cover?.stickerId ?? stickers[0]?.id
-      if (stickerId) update({ cover: { kind: choice, stickerId, ...(cover?.photo && { photo: true }) } })
+      if (stickerId) update({ cover: { kind: 'sticker', stickerId, ...(cover?.photo && { photo: true }) } })
     } else {
       update({ layout: choice, cover: undefined })
     }
@@ -81,7 +72,7 @@ export function CoverEditor({ book, hasPhoto, onUpdate, onDone, toast }: Props) 
 
         <div className="cover-editor-layouts" role="radiogroup" aria-label="Cover layout">
           {CHOICES.map((choice) => {
-            const single = choice === 'sticker' || choice === 'stamp'
+            const single = choice === 'sticker'
             return (
               <button
                 key={choice}
@@ -128,7 +119,7 @@ export function CoverEditor({ book, hasPhoto, onUpdate, onDone, toast }: Props) 
                 <small>
                   {photoReady
                     ? 'Fills the whole cover, behind the title.'
-                    : "This sticker was made before the app kept original pictures."}
+                    : 'This sticker was made before the app kept original pictures.'}
                 </small>
               </span>
               <span className="switch" aria-hidden="true" />
@@ -147,14 +138,6 @@ export function CoverEditor({ book, hasPhoto, onUpdate, onDone, toast }: Props) 
 
 /** A tiny sketch of each cover layout, for its button. */
 function LayoutGlyph({ layout }: { layout: CoverChoice }) {
-  if (layout === 'stamp') {
-    return (
-      <svg className="layout-glyph" viewBox="0 0 20 20" aria-hidden="true">
-        <rect x="3" y="2.5" width="14" height="15" rx="0.8" strokeDasharray="1.4 1.1" fill="none" stroke="currentColor" strokeWidth="1.3" />
-        <rect x="5.5" y="5" width="9" height="8.5" rx="1" />
-      </svg>
-    )
-  }
   const boxes: Record<CoverLayout | 'sticker', [number, number, number, number, number][]> = {
     playful: [
       [2, 3, 7, 7, -8],

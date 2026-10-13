@@ -29,7 +29,6 @@ import type { ColoringDetail } from './coloring'
 import type { StickerEffect } from './effects'
 import { parseStickerAi } from './smart-groups'
 import { cleanFolderName, isFolderColor, type FolderKey } from './folders'
-import type { Rect } from './geometry'
 import {
   IMAGE_TYPES,
   type ImageKind,
@@ -45,12 +44,12 @@ const PUSH_BATCH = 50
 /**
  * Raised whenever the server starts sending something earlier versions of the app didn't keep (2:
  * coloring books, and which book each page is in; 3: pages with their colour guide hidden;
- * 4: what the AI says each sticker shows, and its AI folder; 5: folder names, the pictures stickers
- * were cut from, and single-sticker book covers). An installed app opens on its cached version
+ * 4: what the AI says each sticker shows, and its AI folder; 5: stamps, and the size of each sticker's
+ * original picture; 6: folder names, and covers of one sticker). An installed app opens on its cached version
  * after an update and syncs once before the new one takes over, so that old version can move the
  * cursor past records it threw away. A new version pulls everything again to pick those up.
  */
-const PULL_VERSION = 5
+const PULL_VERSION = 6
 const DOWNLOADS_AT_ONCE = 4
 
 /** The server said we're not signed in (any more). */
@@ -90,17 +89,9 @@ const stickerToSync = (s: StickerRecord): SyncSticker => ({
   topic: s.topic ?? null,
   effect: s.effect ?? null,
   ai: s.ai ?? null,
-  sourceRect: s.source && s.sourceRect ? s.sourceRect : null,
+  kind: s.kind ?? null,
+  original: s.originalSize ?? null,
 })
-
-/** A synced rectangle of fractions, checked. */
-function parseRect(raw: unknown): Rect | undefined {
-  const r = raw as Rect | null
-  const ok = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= -1 && v <= 2
-  return r && ok(r.x) && ok(r.y) && ok(r.width) && ok(r.height) && r.width > 0 && r.height > 0
-    ? { x: r.x, y: r.y, width: r.width, height: r.height }
-    : undefined
-}
 
 const folderToSync = (f: FolderRecord): SyncFolder => ({ key: f.key, color: f.color ?? '', name: f.name ?? '' })
 
@@ -162,7 +153,7 @@ async function pushBatch(): Promise<boolean> {
       else {
         if (entry.images) {
           await uploadImage('sticker', sticker.id, sticker.blob)
-          if (sticker.source) await uploadImage('sticker-source', sticker.id, sticker.source)
+          if (sticker.original) await uploadImage('sticker-original', sticker.id, sticker.original)
         }
         body.stickers.push(stickerToSync(sticker))
       }
@@ -219,12 +210,8 @@ async function pullPage(): Promise<boolean> {
   await inParallel(page.stickers, async (s) => {
     if (s.deleted) return void stickers.push({ deleted: true, key: s.id })
     // Pictures never change, so only new stickers need theirs downloaded.
-    const known = !!(await getSticker(s.id))
-    const blob = known ? undefined : await downloadImage('sticker', s.id)
+    const blob = (await getSticker(s.id)) ? undefined : await downloadImage('sticker', s.id)
     if (blob === null) return
-    const sourceRect = parseRect(s.sourceRect)
-    // Without the picture it was cut from, a sticker is still a sticker.
-    const source = !known && sourceRect ? await downloadImage('sticker-source', s.id) : undefined
     const analysis = decodeAnalysis(s.analysis)
     const ai = parseStickerAi(s.ai)
     stickers.push({
@@ -238,9 +225,9 @@ async function pullPage(): Promise<boolean> {
         ...(s.topic && { topic: s.topic as TopicId }),
         ...(s.effect && { effect: s.effect as StickerEffect }),
         ...(ai && { ai }),
+        ...(s.kind === 'stamp' && { kind: 'stamp' as const }),
+        ...(s.original && { originalSize: s.original }),
         ...(blob && { blob }),
-        ...(sourceRect && (known || source) && { sourceRect }),
-        ...(source && { source }),
       },
     })
   })
@@ -299,4 +286,12 @@ export async function syncOnce(accountKey: string) {
   // Bounded, in case edits keep arriving while we send.
   for (let i = 0; i < 1000 && (await pushBatch()); i++);
   for (let i = 0; i < 1000 && (await pullPage()); i++);
+}
+
+/**
+ * The original picture of a sticker made on another device. They can be big, so they're fetched
+ * when looked at rather than with the sticker. Null when the server doesn't have it.
+ */
+export async function fetchOriginal(id: string): Promise<Blob | null> {
+  return downloadImage('sticker-original', id)
 }

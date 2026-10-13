@@ -606,8 +606,8 @@ test.describe('coloring book', () => {
     await expect(book.getByRole('img', { name: 'Back cover', exact: true })).toBeVisible({ timeout: 20_000 })
     await book.getByLabel('Title').fill('Sunny Days')
 
-    // The cover is customized from its preview: colour, layout, or one sticker on a stamp, and then
-    // the picture the sticker was cut from behind the title.
+    // The cover is customized from its preview: colour, layout, or one sticker, and then the
+    // picture the sticker was made from behind the title.
     await book.getByRole('button', { name: 'Customize cover' }).click()
     const coverViewer = page.getByRole('dialog', { name: 'Book preview' })
     const editor = coverViewer.getByRole('region', { name: 'Customize cover' })
@@ -615,18 +615,18 @@ test.describe('coloring book', () => {
     await editor.getByRole('radio', { name: 'Spotlight' }).click()
     await expect(editor.getByRole('radio', { name: 'Spotlight' })).toHaveAttribute('aria-checked', 'true')
     await expect(editor.getByRole('switch', { name: /original picture/ })).toHaveCount(0)
-    await editor.getByRole('radio', { name: 'Stamp' }).click()
+    await editor.getByRole('radio', { name: 'Single' }).click()
     await expect(editor.getByRole('radio', { name: 'Sticker for the cover' })).toHaveAttribute('aria-checked', 'true')
     const photo = editor.getByRole('switch', { name: /original picture/ })
     await expect(photo).toBeEnabled()
-    const stampCover = await coverViewer.getByRole('img', { name: 'Cover' }).getAttribute('src')
+    const singleCover = await coverViewer.getByRole('img', { name: 'Cover' }).getAttribute('src')
     await photo.click()
     await expect(photo).toHaveAttribute('aria-checked', 'true')
     // The sky-blue picture now fills the cover, right down to its corners.
     await expect
       .poll(async () => {
         const img = coverViewer.getByRole('img', { name: 'Cover' })
-        if ((await img.getAttribute('src')) === stampCover) return false
+        if ((await img.getAttribute('src')) === singleCover) return false
         const rgb = await img.evaluate(async (el: HTMLImageElement) => {
           await el.decode()
           const canvas = document.createElement('canvas')

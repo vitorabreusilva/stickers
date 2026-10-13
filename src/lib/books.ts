@@ -49,22 +49,19 @@ export interface CoverStyle {
 export const DEFAULT_STYLE: CoverStyle = { background: 'cream', layout: 'playful' }
 
 /**
- * A cover made of one sticker instead of a layout of all of them: the sticker big ('sticker'), or
- * on a postage stamp ('stamp'). With `photo`, the picture the sticker was cut from fills the whole
- * cover instead, behind the title.
+ * A cover made of one sticker (or stamp) instead of a layout of all of them. With `photo`, the
+ * picture it was made from fills the whole cover instead, behind the title.
  */
 export interface BookCover {
-  kind: 'sticker' | 'stamp'
+  kind: 'sticker'
   stickerId: string
   photo?: boolean
 }
 
-export const COVER_KIND_NAMES: Record<BookCover['kind'], string> = { sticker: 'Single', stamp: 'Stamp' }
-
 /** A synced cover, checked; undefined if it isn't one (or the book uses a layout). */
 export function parseBookCover(raw: unknown): BookCover | undefined {
   const r = raw as Partial<BookCover> | null
-  if (!r || (r.kind !== 'sticker' && r.kind !== 'stamp') || typeof r.stickerId !== 'string' || !r.stickerId) return undefined
+  if (!r || r.kind !== 'sticker' || typeof r.stickerId !== 'string' || !r.stickerId) return undefined
   return { kind: r.kind, stickerId: r.stickerId.slice(0, 64), ...(r.photo === true && { photo: true }) }
 }
 
@@ -90,4 +87,22 @@ export function newBookTitle(taken: string[]): string {
 export function bookFileName(title: string, suffix = ''): string {
   const name = (title.trim() || DEFAULT_TITLE).replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '').toLowerCase()
   return `${name || 'coloring-book'}${suffix}.pdf`
+}
+
+/** A coloring page made from a sticker, and where it is. */
+export interface PageOfSticker<B, P> {
+  book: B
+  page: P
+  /** Its page number in the book. */
+  folio: number
+}
+
+/** Every coloring page made from sticker `stickerId`, book by book in the order given. */
+export function pagesOfSticker<B extends { pages: { stickerId: string }[] }>(
+  books: B[],
+  stickerId: string,
+): PageOfSticker<B, B['pages'][number]>[] {
+  return books.flatMap((book) =>
+    book.pages.flatMap((page, index) => (page.stickerId === stickerId ? [{ book, page, folio: index + 1 }] : [])),
+  )
 }

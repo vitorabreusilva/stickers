@@ -1358,17 +1358,19 @@ button {
   flex: 2;
 }
 
+/* Screens opened on top of the collection. Each is a layer of its own, above the collection's
+   dock and below toasts, so it covers the screens under it whatever their own z-index. */
+.screen-layer {
+  position: relative;
+  z-index: 10;
+}
+
 /* Sticker detail */
 
 .detail-backdrop {
   position: fixed;
   inset: 0;
   z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: calc(var(--safe-top) + 64px) 24px calc(var(--safe-bottom) + 24px);
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
@@ -1383,9 +1385,21 @@ button {
   box-shadow: inset 0 0 0 1.5px var(--line);
 }
 
+/* Everything but the close button and the pickers, which stay put while this scrolls. */
+.detail-scroll {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(var(--safe-top) + 64px) 16px calc(var(--safe-bottom) + 24px);
+}
+
 .detail-sticker {
   width: min(100%, 420px);
-  height: min(50vh, 420px);
+  height: min(46vh, 420px);
   flex: none;
   animation: pop 0.4s cubic-bezier(0.2, 1.5, 0.5, 1);
 }
@@ -1446,6 +1460,199 @@ button {
 
 .topic-picker .effect-picker {
   margin-bottom: 4px;
+}
+
+/* What the sticker is made of: its style, sizes, original picture and coloring pages. */
+.detail-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(100%, 420px);
+  margin-top: 26px;
+}
+
+.detail-facts {
+  margin: 0;
+  padding: 4px 16px;
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.detail-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  font-size: 14px;
+}
+
+.detail-facts > div + div {
+  border-top: 1.5px solid var(--line);
+}
+
+.detail-facts dt {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.detail-facts dd {
+  margin: 0;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.detail-original-btn {
+  width: 100%;
+}
+
+.detail-note {
+  margin: 0;
+  padding: 0 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.detail-heading {
+  margin: 10px 4px 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.detail-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.detail-page {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 8px 14px 8px 8px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow:
+    0 3px 0 var(--line),
+    inset 0 0 0 1.5px var(--line);
+  text-align: left;
+  transition: transform 0.1s;
+}
+
+.detail-page:active {
+  transform: translateY(2px);
+}
+
+.detail-page .paper {
+  width: 48px;
+  flex: none;
+}
+
+.detail-page > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.detail-page strong {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-page small {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+/* The picture a sticker was made from, full screen. */
+.original-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: #0e0a1a;
+  color: #fff;
+  animation: fade 0.2s;
+}
+
+.original-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(var(--safe-top) + 10px) 12px 10px;
+}
+
+.original-bar h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.original-bar .icon-btn {
+  color: #fff;
+}
+
+.original-stage {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  padding: 8px 16px;
+}
+
+.original-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+.original-stage .spinner {
+  border-color: rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+}
+
+.original-message {
+  max-width: 320px;
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 650;
+  text-align: center;
+}
+
+.original-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px calc(var(--safe-bottom) + 16px);
+}
+
+.original-footer p {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.original-footer small {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* Backup */
@@ -2094,6 +2301,57 @@ button {
   color: var(--ink-soft);
   font-size: 14px;
   font-weight: 750;
+}
+
+/* The sticker a coloring page was made from. */
+.page-source {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 8px;
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.page-source-art {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+}
+
+.page-source-art img {
+  max-width: 100%;
+  max-height: 100%;
+  filter: var(--sticker-shadow);
+}
+
+.page-source-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.page-source-text strong {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.page-source-text small {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.page-source-open {
+  flex: none;
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: 14px;
 }
 
 button.paper {

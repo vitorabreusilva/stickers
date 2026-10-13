@@ -130,7 +130,8 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
         effect: null,
         analysis: { version: 1, embedding: 'AAAA' },
         ai: null,
-        sourceRect: null,
+        kind: null,
+        original: null,
       },
       {
         id: 's2',
@@ -141,7 +142,8 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
         effect: 'holo',
         analysis: null,
         ai: { subject: 'Bluey', folder: { name: 'Bluey', emoji: '🐶' } },
-        sourceRect: null,
+        kind: null,
+        original: null,
       },
     ])
     expect(first.folders).toEqual([{ key: 'dogs', color: 'mint', name: null }])
@@ -158,22 +160,19 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     const edited = await pullJson(me.cookie, first.rev)
     expect(edited.stickers[0]).toMatchObject({ id: 's2', topic: 'cartoons', ai: { subject: 'Bluey' } })
 
-    // Folder names, the picture a sticker was cut from, and single-sticker covers sync, and devices
-    // that don't know about them leave them alone.
+    // Folder names and single-sticker covers sync, and devices that don't know about them leave
+    // them alone.
     await pushJson(me.cookie, {
-      stickers: [{ id: 's1', width: 512, height: 600, createdAt: 1, sourceRect: { x: 0.1, y: 0.2, width: 0.5, height: 9 } }],
       folders: [{ key: 'cats', color: '', name: 'My cats' }],
-      books: [{ id: 'b2', title: 'Holiday', background: 'night', layout: 'wild', cover: { kind: 'stamp', stickerId: 's1', photo: true, x: 1 }, createdAt: 4 }],
+      books: [{ id: 'b2', title: 'Holiday', background: 'night', layout: 'wild', cover: { kind: 'sticker', stickerId: 's1', photo: true, x: 1 }, createdAt: 4 }],
     })
     await pushJson(me.cookie, {
-      stickers: [{ id: 's1', width: 512, height: 600, createdAt: 1, topic: 'cats' }],
       folders: [{ key: 'cats', color: 'pink' }],
       books: [{ id: 'b2', title: 'Holiday!', background: 'night', layout: 'wild', createdAt: 4 }],
     })
     const named = await pullJson(me.cookie, edited.rev)
-    expect(named.stickers[0]).toMatchObject({ id: 's1', topic: 'cats', sourceRect: { x: 0.1, y: 0.2, width: 0.5, height: 2 } })
     expect(named.folders).toEqual([{ key: 'cats', color: 'pink', name: 'My cats' }])
-    expect(named.books[0]).toMatchObject({ title: 'Holiday!', cover: { kind: 'stamp', stickerId: 's1', photo: true } })
+    expect(named.books[0]).toMatchObject({ title: 'Holiday!', cover: { kind: 'sticker', stickerId: 's1', photo: true } })
     expect(named.books[0].cover).not.toHaveProperty('x')
 
     // Only what changed comes back next time, deletions included.
@@ -203,6 +202,23 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     expect((await pullJson(me.cookie, second.rev)).stickers).toEqual([])
   })
 
+  it('keeps stamps and the size of their original picture, even when older devices edit them', async () => {
+    const stamp = { id: 'st1', width: 600, height: 400, createdAt: 9, kind: 'stamp', original: { width: 4032, height: 3024 } }
+    await pushJson(me.cookie, { stickers: [stamp, { id: 'st2', width: 5, height: 5, createdAt: 9, original: { width: -1 } }] })
+    const start = (await pullJson(me.cookie)).stickers
+    expect(start.find((s: { id: string }) => s.id === 'st1')).toMatchObject({ kind: 'stamp', original: { width: 4032, height: 3024 } })
+    // Nonsense sizes are dropped rather than stored.
+    expect(start.find((s: { id: string }) => s.id === 'st2')).toMatchObject({ kind: null, original: null })
+    const rev = (await pullJson(me.cookie)).rev
+
+    // A device from before stamps changes its topic: it stays a stamp, with its original's size.
+    await pushJson(me.cookie, { stickers: [{ id: 'st1', width: 600, height: 400, createdAt: 9, topic: 'food', ai: null }] })
+    const edited = await pullJson(me.cookie, rev)
+    expect(edited.stickers).toEqual([
+      expect.objectContaining({ id: 'st1', topic: 'food', kind: 'stamp', original: { width: 4032, height: 3024 } }),
+    ])
+  })
+
   it('pages through big pulls without losing anything', async () => {
     const other = await signIn(`friend+${run}@example.com`)
     const many = Array.from({ length: 450 }, (_, i) => ({ id: `m${i}`, width: 1, height: 1, createdAt: i }))
@@ -221,7 +237,7 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     expect(pages).toBe(3)
     expect(seen).toEqual(many.map((s) => s.id))
     // And none of it is visible to anyone else.
-    expect((await pullJson(me.cookie)).stickers.map((s: { id: string }) => s.id)).toEqual(['s1', 's2'])
+    expect((await pullJson(me.cookie)).stickers.map((s: { id: string }) => s.id).sort()).toEqual(['s1', 's2', 'st1', 'st2'])
   })
 
   it('stores pictures per person, and deletes them with their sticker', async () => {
@@ -230,6 +246,8 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
       call(cookie, `/images/${kind}/${id}`, { method: 'PUT', body: png, headers: { 'content-type': type } })
 
     expect((await put('sticker', 's1')).status).toBe(200)
+    expect((await put('sticker-original', 's1', 'image/jpeg')).status).toBe(200)
+    expect((await call(me.cookie, '/images/sticker-original/s1')).headers.get('content-type')).toBe('image/jpeg')
     const back = await call(me.cookie, '/images/sticker/s1')
     expect(back.headers.get('content-type')).toBe('image/png')
     expect(new Uint8Array(await back.arrayBuffer())).toEqual(png)
@@ -241,10 +259,9 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     const stranger = await signIn(`friend2+${run}@example.com`)
     expect((await call(stranger.cookie, '/images/sticker/s1')).status).toBe(404)
 
-    expect((await put('sticker-source', 's1', 'image/jpeg')).status).toBe(200)
     await pushJson(me.cookie, { stickers: [{ id: 's1', deleted: true }] })
     expect((await call(me.cookie, '/images/sticker/s1')).status).toBe(404)
-    expect((await call(me.cookie, '/images/sticker-source/s1')).status).toBe(404)
+    expect((await call(me.cookie, '/images/sticker-original/s1')).status).toBe(404)
   })
 
   it('rejects malformed pushes', async () => {

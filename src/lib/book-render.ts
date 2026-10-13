@@ -18,12 +18,11 @@ import {
   type BookSide,
   type Box,
 } from './book-layout'
-import { COVER_PALETTES, DEFAULT_TITLE, type BookCover, type CoverPalette, type CoverStyle } from './books'
+import { COVER_PALETTES, DEFAULT_TITLE, type CoverPalette, type CoverStyle } from './books'
 import { LINE_WIDTHS_MM, type ColoringDetail } from './coloring'
 import type { ColoringReply, ColoringRequest } from './coloring-protocol'
 import { bakeEffect } from './effect-render'
 import type { StickerEffect } from './effects'
-import type { Rect } from './geometry'
 import { canvasToBlob, createCanvas } from './image'
 import { buildPdf, deflate, fullPages, type PdfImage, type PdfPage } from './pdf'
 
@@ -313,8 +312,7 @@ async function drawCover(ctx: CanvasRenderingContext2D, book: BookContents) {
   const area = { x: margin, y: mmToPx(50), width: PAGE_PX.width - 2 * margin, height: PAGE_PX.height - mmToPx(50) - margin }
   if (cover) {
     const image = await stickerBitmap(cover.sticker)
-    if (cover.kind === 'stamp') drawStamp(ctx, image, area, palette)
-    else drawSingleSticker(ctx, image, area)
+    drawSingleSticker(ctx, image, area)
     image.close()
     return
   }
@@ -383,20 +381,14 @@ function drawCoverTitle(ctx: CanvasRenderingContext2D, title: string, palette: C
 }
 
 /**
- * The picture a sticker was cut from, filling the whole cover. It's framed on the sticker, a little
- * below the middle so the title doesn't sit on it, and the cover colour washes in at the top.
+ * The picture a sticker was made from, filling the whole cover from its middle, with the cover
+ * colour washing in at the top behind the title.
  */
 async function drawCoverPhoto(ctx: CanvasRenderingContext2D, photo: CoverPhoto, palette: CoverPalette) {
   const image = await createImageBitmap(photo.blob)
   const { width: W, height: H } = PAGE_PX
-  const fill = Math.max(W / image.width, H / image.height)
-  // Zoom in on a small sticker a little, but not so far the picture goes soft.
-  const scale = Math.min(fill * 1.5, Math.max(fill, (W * 0.7) / Math.max(1, photo.rect.width * image.width)))
-  const fx = (photo.rect.x + photo.rect.width / 2) * image.width * scale
-  const fy = (photo.rect.y + photo.rect.height / 2) * image.height * scale
-  const x = Math.min(0, Math.max(W - image.width * scale, W / 2 - fx))
-  const y = Math.min(0, Math.max(H - image.height * scale, H * 0.58 - fy))
-  ctx.drawImage(image, x, y, image.width * scale, image.height * scale)
+  const scale = Math.max(W / image.width, H / image.height)
+  ctx.drawImage(image, (W - image.width * scale) / 2, (H - image.height * scale) / 2, image.width * scale, image.height * scale)
   image.close()
   const wash = ctx.createLinearGradient(0, 0, 0, H * 0.4)
   wash.addColorStop(0, withAlpha(palette.paper, 0.75))
@@ -418,89 +410,6 @@ function drawSingleSticker(ctx: CanvasRenderingContext2D, image: ImageBitmap, ar
   ctx.shadowBlur = mmToPx(3)
   ctx.shadowOffsetY = mmToPx(1.5)
   ctx.drawImage(image, -w / 2, -h / 2, w, h)
-  ctx.restore()
-}
-
-/** One sticker on a postage stamp: white paper with perforated edges, a tinted panel, a slight tilt. */
-function drawStamp(ctx: CanvasRenderingContext2D, image: ImageBitmap, area: Box, palette: CoverPalette) {
-  const aspect = Math.min(1.25, Math.max(0.75, image.width / image.height))
-  let w = area.width * 0.8
-  let h = w / aspect
-  if (h > area.height * 0.84) {
-    h = area.height * 0.84
-    w = h * aspect
-  }
-  w = Math.round(w)
-  h = Math.round(h)
-  const stamp = createCanvas(w, h)
-  const s = context(stamp)
-  s.fillStyle = '#fffdf8'
-  s.fillRect(0, 0, w, h)
-
-  // Perforations: half-holes punched evenly along every edge, with one in each corner.
-  const radius = mmToPx(1.7)
-  s.globalCompositeOperation = 'destination-out'
-  s.beginPath()
-  const punch = (length: number, at: (t: number) => [number, number]) => {
-    const holes = Math.max(2, Math.round(length / mmToPx(5)))
-    for (let i = 0; i <= holes; i++) {
-      const [x, y] = at((i / holes) * length)
-      s.moveTo(x + radius, y)
-      s.arc(x, y, radius, 0, Math.PI * 2)
-    }
-  }
-  punch(w, (t) => [t, 0])
-  punch(w, (t) => [t, h])
-  punch(h, (t) => [0, t])
-  punch(h, (t) => [w, t])
-  s.fill()
-  s.globalCompositeOperation = 'source-over'
-
-  // The picture panel, with a fine frame like a printed stamp.
-  const border = mmToPx(5.5)
-  const panel = { x: border, y: border, width: w - 2 * border, height: h - 2 * border - mmToPx(4) }
-  s.fillStyle = palette.paper
-  s.fillRect(panel.x, panel.y, panel.width, panel.height)
-  s.fillStyle = palette.dots
-  const gap = mmToPx(3.5)
-  for (let y = panel.y + gap / 2; y < panel.y + panel.height; y += gap) {
-    for (let x = panel.x + gap / 2; x < panel.x + panel.width; x += gap) {
-      s.beginPath()
-      s.arc(x, y, mmToPx(0.3), 0, Math.PI * 2)
-      s.fill()
-    }
-  }
-  s.strokeStyle = withAlpha(palette.accent, 0.55)
-  s.lineWidth = mmToPx(0.35)
-  s.strokeRect(panel.x - mmToPx(1), panel.y - mmToPx(1), panel.width + mmToPx(2), panel.height + mmToPx(2))
-  const pad = mmToPx(4)
-  const fit = Math.min((panel.width - 2 * pad) / image.width, (panel.height - 2 * pad) / image.height)
-  const iw = image.width * fit
-  const ih = image.height * fit
-  s.shadowColor = 'rgba(40, 20, 60, 0.25)'
-  s.shadowBlur = mmToPx(1.2)
-  s.shadowOffsetY = mmToPx(0.5)
-  s.drawImage(image, panel.x + (panel.width - iw) / 2, panel.y + (panel.height - ih) / 2, iw, ih)
-  s.shadowColor = 'transparent'
-
-  // The little line of print under the picture.
-  const small = mmToPx(2.6)
-  s.font = `800 ${small}px ${FONT}`
-  track(s, 0.12, small)
-  s.fillStyle = INK
-  s.globalAlpha = 0.75
-  s.textAlign = 'center'
-  s.textBaseline = 'middle'
-  s.fillText('COLOR ME', w / 2, h - border - mmToPx(1.6))
-  s.globalAlpha = 1
-
-  ctx.save()
-  ctx.translate(area.x + area.width / 2, area.y + area.height * 0.47)
-  ctx.rotate((-4 * Math.PI) / 180)
-  ctx.shadowColor = 'rgba(40, 20, 60, 0.3)'
-  ctx.shadowBlur = mmToPx(3)
-  ctx.shadowOffsetY = mmToPx(1.5)
-  ctx.drawImage(stamp, -w / 2, -h / 2)
   ctx.restore()
 }
 
@@ -678,10 +587,9 @@ export interface StoredPage {
   hideGuide?: boolean
 }
 
-/** The picture a sticker was cut from, and where the sticker sits in it (as fractions). */
+/** The picture a cover sticker was made from. */
 export interface CoverPhoto {
   blob: Blob
-  rect: Rect
 }
 
 /** What it takes to draw any side of a book. */
@@ -691,7 +599,7 @@ export interface BookContents {
   pages: StoredPage[]
   stickers: CoverSticker[]
   /** One sticker on the cover instead of the layout; with `photo`, its picture fills the cover. */
-  cover?: { kind: BookCover['kind']; sticker: CoverSticker; photo?: CoverPhoto }
+  cover?: { sticker: CoverSticker; photo?: CoverPhoto }
 }
 
 /** Draws one side of the book. `scale` < 1 makes a smaller picture for previews. */

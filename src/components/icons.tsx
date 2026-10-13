@@ -196,3 +196,11 @@ export const StarMascot = ({ size = 140 }: { size?: number }) => (
     </g>
   </svg>
 )
+
+export const PhotoIcon = () => (
+  <Icon>
+    <rect x="3.5" y="5" width="17" height="14" rx="2.5" />
+    <circle cx="9" cy="10" r="1.6" />
+    <path d="M20.5 15.5l-5-5L6 19" />
+  </Icon>
+)

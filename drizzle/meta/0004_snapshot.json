@@ -1,5 +1,5 @@
 {
-  "id": "851684fb-37e3-445a-b281-f362d8c4938b",
+  "id": "d92f11dc-e3d2-41d1-b25b-694b1ae59a00",
   "prevId": "53461cfe-186a-4272-9fc1-4ad182779c51",
   "version": "7",
   "dialect": "postgresql",
@@ -309,12 +309,6 @@
           "notNull": true,
           "default": "'playful'"
         },
-        "cover": {
-          "name": "cover",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "bigint",
@@ -403,12 +397,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -685,8 +673,14 @@
           "primaryKey": false,
           "notNull": false
         },
-        "source_rect": {
-          "name": "source_rect",
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "original": {
+          "name": "original",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

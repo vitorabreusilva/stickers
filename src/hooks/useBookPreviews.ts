@@ -59,7 +59,6 @@ export function bookContents(book: Book): BookContents {
     ...(book.cover &&
       coverSticker && {
         cover: {
-          kind: book.cover.kind,
           sticker: coverSticker,
           ...(book.cover.photo && book.coverPhoto && { photo: book.coverPhoto }),
         },
@@ -71,7 +70,7 @@ export function bookContents(book: Book): BookContents {
 function coverKey(book: BookContents): string {
   const { cover } = book
   const art = cover
-    ? `${cover.kind}:${cover.photo ? `photo:${cover.sticker.key}:${Object.values(cover.photo.rect).join(',')}` : cover.sticker.key}`
+    ? `${cover.photo ? 'photo' : 'sticker'}:${cover.sticker.key}`
     : `${book.style.layout}:${book.stickers.map((s) => s.key).join(',')}`
   return `cover|${book.title}|${book.style.background}|${art}`
 }

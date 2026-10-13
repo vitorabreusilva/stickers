@@ -4,8 +4,8 @@
 import type { EncodedAnalysis } from './codec'
 
 /** Pictures are uploaded on their own, before the records that point at them. */
-export type ImageKind = 'sticker' | 'sticker-source' | 'book-page' | 'book-sticker'
-export const IMAGE_KINDS: readonly ImageKind[] = ['sticker', 'sticker-source', 'book-page', 'book-sticker']
+export type ImageKind = 'sticker' | 'sticker-original' | 'book-page' | 'book-sticker'
+export const IMAGE_KINDS: readonly ImageKind[] = ['sticker', 'sticker-original', 'book-page', 'book-sticker']
 export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 /** Vercel Functions take request bodies up to 4.5 MB. */
 export const MAX_IMAGE_BYTES = 4_000_000
@@ -23,11 +23,13 @@ export interface SyncSticker {
   effect?: string | null
   /** What the AI says it shows, and its AI folder (see smart-groups). Missing from devices that haven't updated. */
   ai?: object | null
+  /** 'stamp' for stamps, null for die-cut stickers. Missing from devices that haven't updated. */
+  kind?: string | null
   /**
-   * Where the sticker sits in the picture it was cut from, which is uploaded as 'sticker-source'.
-   * null when there's no such picture; missing from devices that haven't updated.
+   * Size of the picture the sticker was made from, whose copy is the 'sticker-original' image.
+   * Null for stickers made before it was kept. Missing from devices that haven't updated.
    */
-  sourceRect?: { x: number; y: number; width: number; height: number } | null
+  original?: { width: number; height: number } | null
 }
 
 export interface SyncFolder {

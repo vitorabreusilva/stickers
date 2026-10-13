@@ -100,8 +100,10 @@ export const stickers = pgTable(
     effect: text('effect'),
     /** What the AI says the sticker shows, and its AI folder. */
     ai: jsonb('ai'),
-    /** Where the sticker sits in the picture it was cut from; null when that picture isn't kept. */
-    sourceRect: jsonb('source_rect'),
+    /** 'stamp', or null for a die-cut sticker. */
+    kind: text('kind'),
+    /** Size of the picture it was made from, { width, height }; null when it wasn't kept. */
+    original: jsonb('original'),
   },
   (t) => [primaryKey({ columns: [t.userId, t.id] }), index('stickers_rev_idx').on(t.userId, t.rev)],
 )
