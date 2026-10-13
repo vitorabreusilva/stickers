@@ -17,6 +17,9 @@ const OUTLINE_RATIO: Record<OutlineSize, number> = { none: 0, thin: 0.02, thick:
 const MAX_SIZE = 1024
 const MIN_SIZE = 512
 
+/** How much to scale a crop whose longest side is `longest` px so it comes out at sticker size. */
+export const stickerScale = (longest: number) => Math.min(MAX_SIZE / longest, Math.max(1, MIN_SIZE / longest))
+
 export interface StickerImage {
   blob: Blob
   width: number
@@ -80,7 +83,7 @@ export function cutOut(image: LoadedImage, loop: Point[], subject?: SubjectMask)
   if (crop.width < 1 || crop.height < 1) throw new Error('That loop is outside the picture')
 
   const longest = Math.max(crop.width, crop.height)
-  const scale = Math.min(MAX_SIZE / longest, Math.max(1, MIN_SIZE / longest))
+  const scale = stickerScale(longest)
   const width = Math.max(1, Math.round(crop.width * scale))
   const height = Math.max(1, Math.round(crop.height * scale))
 
@@ -155,7 +158,7 @@ export function backdropCut(image: LoadedImage, loop: Point[]): Cut | null {
   let cut: Cut | null = null
   if (crop.width >= 8 && crop.height >= 8) {
     const longest = Math.max(crop.width, crop.height)
-    const scale = Math.min(MAX_SIZE / longest, Math.max(1, MIN_SIZE / longest))
+    const scale = stickerScale(longest)
     const width = Math.max(1, Math.round(crop.width * scale))
     const height = Math.max(1, Math.round(crop.height * scale))
     const canvas = createCanvas(width, height)

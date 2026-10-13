@@ -23,6 +23,15 @@ export interface StickerRecord {
   effect?: StickerEffect
   /** What the AI says it shows, and the AI folder it's in. Only when signed in to a server with AI keys. */
   ai?: StickerAi
+  /** How it was made: framed whole as a stamp, or (when missing) cut out as a die-cut sticker. */
+  kind?: 'stamp'
+  /**
+   * The picture the sticker was made from, as it was opened. Missing for stickers made before it
+   * was kept, and on other devices until it's first looked at (see originalSize).
+   */
+  original?: Blob
+  /** Size in pixels of the picture it was made from, before it was scaled down for editing. */
+  originalSize?: { width: number; height: number }
 }
 
 /** How the user dressed up a folder in the collection. */
@@ -171,13 +180,27 @@ export async function saveSticker(record: StickerRecord): Promise<void> {
 }
 
 /** Applies `patch` to a saved sticker. Does nothing if it was deleted in the meantime. */
-export async function updateSticker(id: string, patch: Partial<Omit<StickerRecord, 'id' | 'blob'>>): Promise<void> {
+export async function updateSticker(
+  id: string,
+  patch: Partial<Omit<StickerRecord, 'id' | 'blob' | 'original' | 'originalSize' | 'kind'>>,
+): Promise<void> {
   const tx = (await db()).transaction(['stickers', 'outbox'], 'readwrite')
   const store = tx.objectStore('stickers')
   const record = await store.get(id)
   if (record) await Promise.all([store.put({ ...record, ...patch }), enqueue(tx.objectStore('outbox'), 'sticker', id)])
   await tx.done
   if (record) changedLocally()
+}
+
+/**
+ * Keeps the original picture downloaded from the server. Not queued for upload: it came from
+ * there. Does nothing if the sticker was deleted in the meantime.
+ */
+export async function storeOriginal(id: string, original: Blob): Promise<void> {
+  const tx = (await db()).transaction('stickers', 'readwrite')
+  const record = await tx.store.get(id)
+  if (record) await tx.store.put({ ...record, original })
+  await tx.done
 }
 
 export async function deleteSticker(id: string): Promise<void> {
@@ -394,7 +417,9 @@ export async function applyRemote(changes: {
     } else {
       const blob = change.record.blob ?? current?.blob
       if (!blob) continue
-      await store.put({ ...change.record, blob })
+      // The original picture is only fetched when it's looked at, so keep one already here.
+      const original = current?.original
+      await store.put({ ...change.record, blob, ...(original && { original }) })
     }
     changed = true
   }

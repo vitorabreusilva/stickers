@@ -29,7 +29,16 @@ describe('backup', () => {
           topic: 'dogs',
           analysis: { version: 1, classes: [{ index: 207, name: 'golden retriever', score: 0.9 }], face: 0, drawn: 0.12, embedding },
         },
-        { id: 'b', blob: png(255, 0), width: 1, height: 1, createdAt: 4 },
+        {
+          id: 'b',
+          blob: png(255, 0),
+          width: 1,
+          height: 1,
+          createdAt: 4,
+          kind: 'stamp',
+          original: new Blob([new Uint8Array([0xff, 0xd8, 7])], { type: 'image/jpeg' }),
+          originalSize: { width: 4032, height: 3024 },
+        },
       ],
       folders: [{ key: 'dogs', color: 'mint' }],
       book: [
@@ -61,6 +70,12 @@ describe('backup', () => {
     expect(await bytesOf(back.stickers[0].blob)).toEqual([1, 2, 3])
     expect(back.stickers[0].blob.type).toBe('image/png')
     expect(await bytesOf(back.stickers[1].blob)).toEqual([255, 0])
+    // Stamps stay stamps, and keep the picture they were made from.
+    expect(back.stickers[1].kind).toBe('stamp')
+    expect(back.stickers[1].originalSize).toEqual({ width: 4032, height: 3024 })
+    expect(await bytesOf(back.stickers[1].original!)).toEqual([0xff, 0xd8, 7])
+    expect(back.stickers[1].original!.type).toBe('image/jpeg')
+    expect('original' in back.stickers[0]).toBe(false)
     expect(back.folders).toEqual([{ key: 'dogs', color: 'mint' }])
     expect(await bytesOf(back.book[0].page)).toEqual([8, 7])
     expect(await bytesOf(back.book[0].sticker)).toEqual([9])

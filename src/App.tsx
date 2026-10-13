@@ -14,7 +14,10 @@ import { signIn, SIGN_IN_ERROR_PARAM } from './lib/account'
 import { canReadClipboard, firstImageFile, readClipboardImage, takeSharedImage } from './lib/device'
 import { folderColor, folderLabel, type FolderKey } from './lib/folders'
 import type { Point } from './lib/geometry'
-import { loadImage, type LoadedImage } from './lib/image'
+import { keepableOriginal, loadImage, type LoadedImage } from './lib/image'
+import { pagesOfSticker } from './lib/books'
+import type { StickerKind } from './lib/stamp'
+import { fetchOriginal } from './lib/sync'
 import type { StickerEffect } from './lib/effects'
 import type { StickerImage } from './lib/sticker'
 import { aiFolderLabels, aiKey, assignGroups, isAiKey, withoutFolder } from './lib/smart-groups'
@@ -34,12 +37,12 @@ type Screen =
   | { kind: 'detail'; id: string }
   | { kind: 'folder'; key: FolderKey }
   | { kind: 'coloring'; id: string }
-  | { kind: 'book'; id: string }
+  | { kind: 'book'; id: string; page?: string }
   | { kind: 'book-preview'; id: string; side: number }
 
 export function App() {
   const { stack, push, back, home } = useNavStack<Screen>()
-  const { stickers, add, remove, update } = useStickers()
+  const { stickers, add, remove, update, attachOriginal } = useStickers()
   const books = useColoringBooks()
   // Sort stickers into topics in the background, and regroup whenever anything changes.
   const analysing = useAutoAnalysis(stickers, update)
@@ -100,13 +103,32 @@ export function App() {
     return update(sticker.id, { topic: to })
   }
 
-  const saveSticker = async ({ blob, width, height }: StickerImage, effect: StickerEffect) => {
+  const saveSticker = async (
+    image: LoadedImage,
+    { blob, width, height }: StickerImage,
+    effect: StickerEffect,
+    kind: StickerKind,
+  ) => {
     const id = newId()
-    await add({ id, blob, width, height, createdAt: Date.now(), ...(effect !== 'none' && { effect }) })
+    // Keep the picture it came from too. A sticker without one is still worth saving.
+    const original = await keepableOriginal(image).catch((err) => {
+      console.error('Could not keep the original picture', err)
+      return undefined
+    })
+    await add({
+      id,
+      blob,
+      width,
+      height,
+      createdAt: Date.now(),
+      ...(effect !== 'none' && { effect }),
+      ...(kind === 'stamp' && { kind: 'stamp' as const }),
+      ...(original && { original, originalSize: { width: image.original.width, height: image.original.height } }),
+    })
     requestPersistentStorage()
     setFreshId(id)
     home()
-    showToast('Added to your collection!')
+    showToast(kind === 'stamp' ? 'Stamp added to your collection!' : 'Added to your collection!')
   }
 
   // Google sign-in that didn't work comes back with ?error=…; the sheet explains what happened.
@@ -150,6 +172,131 @@ export function App() {
     }
   }, [stack.length, openImage, back])
 
+  /** One screen in the stack, from the bottom. */
+  const screenFor = (screen: Screen, i: number) => {
+    switch (screen.kind) {
+      case 'editor':
+        return (
+          <LassoEditor
+            key={i}
+            image={screen.image}
+            onClose={back}
+            onCut={(loop) => push({ kind: 'preview', image: screen.image, loop })}
+          />
+        )
+      case 'preview':
+        return (
+          <StickerPreview
+            key={i}
+            image={screen.image}
+            loop={screen.loop}
+            onBack={back}
+            onSave={(sticker, effect, kind) => saveSticker(screen.image, sticker, effect, kind)}
+          />
+        )
+      case 'folder': {
+        const { emoji, name } = folderLabel(screen.key, sorting, labels)
+        const items =
+          screen.key === 'all' ? (stickers ?? []) : (groups.find((g) => g.key === screen.key)?.items ?? [])
+        return (
+          <FolderView
+            key={i}
+            name={name}
+            emoji={emoji}
+            items={items}
+            color={folderColor(screen.key, colors ?? new Map())}
+            freshId={freshId}
+            onColor={(color) =>
+              setColor(screen.key, color).catch(() => showToast("Couldn't save the folder colour"))
+            }
+            onOpen={(id) => push({ kind: 'detail', id })}
+            onClose={back}
+          />
+        )
+      }
+      case 'detail': {
+        const sticker = stickers?.find((s) => s.id === screen.id)
+        if (!sticker) return null
+        return (
+          <StickerDetail
+            key={i}
+            sticker={sticker}
+            topic={topics.get(sticker.id)}
+            aiFolders={aiFolderList}
+            onClose={back}
+            toast={showToast}
+            onTopic={(to) => moveSticker(sticker, to)}
+            onEffect={(effect) => update(sticker.id, { effect })}
+            onColor={() => push({ kind: 'coloring', id: sticker.id })}
+            pages={pagesOfSticker(books.books ?? [], sticker.id)}
+            onOpenPage={(bookId, page) => push({ kind: 'book', id: bookId, page })}
+            onLoadOriginal={
+              account.status === 'signed-in'
+                ? async () => {
+                    const blob = await fetchOriginal(sticker.id)
+                    if (blob) await attachOriginal(sticker.id, blob)
+                    return blob
+                  }
+                : undefined
+            }
+            onDelete={async () => {
+              await remove(sticker.id)
+              back()
+            }}
+          />
+        )
+      }
+      case 'coloring': {
+        const sticker = stickers?.find((s) => s.id === screen.id)
+        if (!sticker) return null
+        return (
+          <ColoringStudio
+            key={i}
+            sticker={sticker}
+            books={books.books}
+            onAdd={books.addPage}
+            onCreateBook={() => books.create()}
+            onOpenBook={(id) => push({ kind: 'book', id })}
+            onClose={back}
+            toast={showToast}
+          />
+        )
+      }
+      case 'book': {
+        const book = books.books?.find((b) => b.id === screen.id)
+        if (!book) return null
+        return (
+          <BookView
+            key={`${i}-${book.id}`}
+            book={book}
+            onUpdate={(patch) => books.update(book.id, patch)}
+            onDelete={async () => {
+              await books.remove(book.id)
+              back()
+              showToast(`Deleted ${book.title}`)
+            }}
+            books={books.books ?? []}
+            onCreateBook={() => books.create()}
+            onRemovePage={books.removePage}
+            onReorderPages={(ids) => books.reorderPages(book.id, ids)}
+            onUpdatePage={books.updatePage}
+            onPreview={(side) => push({ kind: 'book-preview', id: book.id, side })}
+            initialPage={screen.page}
+            stickerOf={(id) => stickers?.find((s) => s.id === id)}
+            onOpenSticker={(id) => push({ kind: 'detail', id })}
+            onClose={back}
+            toast={showToast}
+          />
+        )
+      }
+      case 'book-preview': {
+        const book = books.books?.find((b) => b.id === screen.id)
+        if (!book) return null
+        return <BookPreview key={i} book={book} start={screen.side} onClose={back} />
+      }
+    }
+  }
+
   return (
     <>
       <Collection
@@ -180,107 +327,12 @@ export function App() {
         }
       />
 
-      {stack.map((screen, i) => {
-        switch (screen.kind) {
-          case 'editor':
-            return (
-              <LassoEditor
-                key={i}
-                image={screen.image}
-                onClose={back}
-                onCut={(loop) => push({ kind: 'preview', image: screen.image, loop })}
-              />
-            )
-          case 'preview':
-            return <StickerPreview key={i} image={screen.image} loop={screen.loop} onBack={back} onSave={saveSticker} />
-          case 'folder': {
-            const { emoji, name } = folderLabel(screen.key, sorting, labels)
-            const items =
-              screen.key === 'all' ? (stickers ?? []) : (groups.find((g) => g.key === screen.key)?.items ?? [])
-            return (
-              <FolderView
-                key={i}
-                name={name}
-                emoji={emoji}
-                items={items}
-                color={folderColor(screen.key, colors ?? new Map())}
-                freshId={freshId}
-                onColor={(color) =>
-                  setColor(screen.key, color).catch(() => showToast("Couldn't save the folder colour"))
-                }
-                onOpen={(id) => push({ kind: 'detail', id })}
-                onClose={back}
-              />
-            )
-          }
-          case 'detail': {
-            const sticker = stickers?.find((s) => s.id === screen.id)
-            if (!sticker) return null
-            return (
-              <StickerDetail
-                key={i}
-                sticker={sticker}
-                topic={topics.get(sticker.id)}
-                aiFolders={aiFolderList}
-                onClose={back}
-                toast={showToast}
-                onTopic={(to) => moveSticker(sticker, to)}
-                onEffect={(effect) => update(sticker.id, { effect })}
-                onColor={() => push({ kind: 'coloring', id: sticker.id })}
-                onDelete={async () => {
-                  await remove(sticker.id)
-                  back()
-                }}
-              />
-            )
-          }
-          case 'coloring': {
-            const sticker = stickers?.find((s) => s.id === screen.id)
-            if (!sticker) return null
-            return (
-              <ColoringStudio
-                key={i}
-                sticker={sticker}
-                books={books.books}
-                onAdd={books.addPage}
-                onCreateBook={() => books.create()}
-                onOpenBook={(id) => push({ kind: 'book', id })}
-                onClose={back}
-                toast={showToast}
-              />
-            )
-          }
-          case 'book': {
-            const book = books.books?.find((b) => b.id === screen.id)
-            if (!book) return null
-            return (
-              <BookView
-                key={`${i}-${book.id}`}
-                book={book}
-                onUpdate={(patch) => books.update(book.id, patch)}
-                onDelete={async () => {
-                  await books.remove(book.id)
-                  back()
-                  showToast(`Deleted ${book.title}`)
-                }}
-                books={books.books ?? []}
-                onCreateBook={() => books.create()}
-                onRemovePage={books.removePage}
-                onReorderPages={(ids) => books.reorderPages(book.id, ids)}
-                onUpdatePage={books.updatePage}
-                onPreview={(side) => push({ kind: 'book-preview', id: book.id, side })}
-                onClose={back}
-                toast={showToast}
-              />
-            )
-          }
-          case 'book-preview': {
-            const book = books.books?.find((b) => b.id === screen.id)
-            if (!book) return null
-            return <BookPreview key={i} book={book} start={screen.side} onClose={back} />
-          }
-        }
-      })}
+      {/* Each in its own layer, so a screen always covers the ones it was opened from. */}
+      {stack.map((screen, i) => (
+        <div key={i} className="screen-layer">
+          {screenFor(screen, i)}
+        </div>
+      ))}
 
       {backupOpen && (
         <BackupSheet

@@ -3,6 +3,7 @@ import { cutoutFor, cutoutPreferred, setCutoutPreferred, type CutoutStatus } fro
 import { effectOf, type StickerEffect } from '../lib/effects'
 import type { Point } from '../lib/geometry'
 import type { LoadedImage } from '../lib/image'
+import { createStamp, STICKER_KINDS, type StickerKind } from '../lib/stamp'
 import { createSticker, OUTLINE_SIZES, type OutlineSize, type Selection, type StickerImage } from '../lib/sticker'
 import { EffectPicker } from './EffectPicker'
 import { BackIcon, SparkleIcon } from './icons'
@@ -12,7 +13,7 @@ interface Props {
   image: LoadedImage
   loop: Point[]
   onBack: () => void
-  onSave: (sticker: StickerImage, effect: StickerEffect) => Promise<void>
+  onSave: (sticker: StickerImage, effect: StickerEffect, kind: StickerKind) => Promise<void>
 }
 
 type Cutout =
@@ -24,6 +25,7 @@ type Cutout =
 const OUTLINE_KEY = 'stickers.outline'
 const EFFECT_KEY = 'stickers.effect'
 const OUTLINE_LABELS: Record<OutlineSize, string> = { none: 'None', thin: 'Thin', thick: 'Thick' }
+const KIND_LABELS: Record<StickerKind, string> = { cutout: 'Sticker', stamp: 'Stamp' }
 
 function savedOutline(): OutlineSize {
   try {
@@ -46,16 +48,19 @@ function savedEffect(): StickerEffect {
 export function StickerPreview({ image, loop, onBack, onSave }: Props) {
   const [outline, setOutline] = useState<OutlineSize>(savedOutline)
   const [effect, setEffect] = useState<StickerEffect>(savedEffect)
+  const [kind, setKind] = useState<StickerKind>('cutout')
   const [removeBg, setRemoveBg] = useState(cutoutPreferred)
+  // Stamps keep the whole picture, so there's no background to remove.
+  const cutting = kind === 'cutout' && removeBg
   const [cutout, setCutout] = useState<Cutout>(() =>
-    removeBg ? { kind: 'working', status: { stage: 'cutting' } } : { kind: 'off' },
+    cutting ? { kind: 'working', status: { stage: 'cutting' } } : { kind: 'off' },
   )
   const [sticker, setSticker] = useState<(StickerImage & { url: string }) | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!removeBg) {
+    if (!cutting) {
       setCutout({ kind: 'off' })
       return
     }
@@ -89,7 +94,7 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
       cancelled = true
       unsubscribe()
     }
-  }, [image, loop, removeBg])
+  }, [image, loop, cutting])
 
   useEffect(() => {
     if (cutout.kind === 'working') {
@@ -99,7 +104,11 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
     let cancelled = false
     let url: string | undefined
     setError(null)
-    createSticker(image, loop, outline, cutout.kind === 'done' ? cutout.selection : undefined)
+    const made =
+      kind === 'stamp'
+        ? createStamp(image, loop)
+        : createSticker(image, loop, outline, cutout.kind === 'done' ? cutout.selection : undefined)
+    made
       .then((result) => {
         if (cancelled) return
         url = URL.createObjectURL(result.blob)
@@ -110,7 +119,7 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
       cancelled = true
       if (url) URL.revokeObjectURL(url)
     }
-  }, [image, loop, outline, cutout])
+  }, [image, loop, outline, cutout, kind])
 
   const chooseOutline = (value: OutlineSize) => {
     setOutline(value)
@@ -139,7 +148,7 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
     if (!sticker || saving) return
     setSaving(true)
     try {
-      await onSave(sticker, effect)
+      await onSave(sticker, effect, kind)
     } catch (err) {
       console.error(err)
       setError('Could not save the sticker. Is your storage full?')
@@ -154,7 +163,7 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
           <button className="icon-btn" onClick={onBack} aria-label="Back to drawing">
             <BackIcon />
           </button>
-          <h2>Your new sticker</h2>
+          <h2>Your new {kind === 'stamp' ? 'stamp' : 'sticker'}</h2>
           <span className="icon-btn-spacer" />
         </header>
 
@@ -170,30 +179,53 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
           )}
         </div>
         <p className="preview-note" role="status">
-          {cutout.kind === 'failed' ? cutout.message : ''}
+          {kind === 'stamp'
+            ? 'The whole area you circled, background and all, in a stamp frame.'
+            : cutout.kind === 'failed'
+              ? cutout.message
+              : ''}
         </p>
 
         <div className="preview-options">
-          <button className="switch-row" role="switch" aria-checked={removeBg} onClick={toggleRemoveBg}>
-            <SparkleIcon />
-            <span>Remove background</span>
-            <span className="switch" aria-hidden="true" />
-          </button>
-
-          <div className="segmented" role="radiogroup" aria-label="Border">
-            <span className="segmented-label">Border</span>
-            {OUTLINE_SIZES.map((size) => (
+          <div className="segmented" role="radiogroup" aria-label="Style">
+            <span className="segmented-label">Style</span>
+            {STICKER_KINDS.map((value) => (
               <button
-                key={size}
+                key={value}
                 role="radio"
-                aria-checked={outline === size}
-                className={outline === size ? 'active' : ''}
-                onClick={() => chooseOutline(size)}
+                aria-checked={kind === value}
+                className={kind === value ? 'active' : ''}
+                onClick={() => setKind(value)}
               >
-                {OUTLINE_LABELS[size]}
+                {KIND_LABELS[value]}
               </button>
             ))}
           </div>
+
+          {kind === 'cutout' && (
+            <>
+              <button className="switch-row" role="switch" aria-checked={removeBg} onClick={toggleRemoveBg}>
+                <SparkleIcon />
+                <span>Remove background</span>
+                <span className="switch" aria-hidden="true" />
+              </button>
+
+              <div className="segmented" role="radiogroup" aria-label="Border">
+                <span className="segmented-label">Border</span>
+                {OUTLINE_SIZES.map((size) => (
+                  <button
+                    key={size}
+                    role="radio"
+                    aria-checked={outline === size}
+                    className={outline === size ? 'active' : ''}
+                    onClick={() => chooseOutline(size)}
+                  >
+                    {OUTLINE_LABELS[size]}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
 
           <EffectPicker image={cutout.kind === 'working' || error ? null : sticker} value={effect} onChange={chooseEffect} />
         </div>
