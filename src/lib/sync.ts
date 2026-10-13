@@ -35,11 +35,12 @@ const PUSH_BATCH = 50
 /**
  * Raised whenever the server starts sending something earlier versions of the app didn't keep (2:
  * coloring books, and which book each page is in; 3: pages with their colour guide hidden;
- * 4: what the AI says each sticker shows, and its AI folder). An installed app opens on its cached version
+ * 4: what the AI says each sticker shows, and its AI folder; 5: stamps, and the size of each sticker's
+ * original picture). An installed app opens on its cached version
  * after an update and syncs once before the new one takes over, so that old version can move the
  * cursor past records it threw away. A new version pulls everything again to pick those up.
  */
-const PULL_VERSION = 4
+const PULL_VERSION = 5
 const DOWNLOADS_AT_ONCE = 4
 
 /** The server said we're not signed in (any more). */
@@ -79,6 +80,8 @@ const stickerToSync = (s: StickerRecord): SyncSticker => ({
   topic: s.topic ?? null,
   effect: s.effect ?? null,
   ai: s.ai ?? null,
+  kind: s.kind ?? null,
+  original: s.originalSize ?? null,
 })
 
 const pageToSync = (p: BookPageRecord) => ({
@@ -125,7 +128,10 @@ async function pushBatch(): Promise<boolean> {
       const sticker = await getSticker(entry.id)
       if (!sticker) body.stickers.push({ id: entry.id, deleted: true, width: 0, height: 0, createdAt: 0 })
       else {
-        if (entry.images) await uploadImage('sticker', sticker.id, sticker.blob)
+        if (entry.images) {
+          await uploadImage('sticker', sticker.id, sticker.blob)
+          if (sticker.original) await uploadImage('sticker-original', sticker.id, sticker.original)
+        }
         body.stickers.push(stickerToSync(sticker))
       }
     } else if (entry.kind === 'folder') {
@@ -196,6 +202,8 @@ async function pullPage(): Promise<boolean> {
         ...(s.topic && { topic: s.topic as TopicId }),
         ...(s.effect && { effect: s.effect as StickerEffect }),
         ...(ai && { ai }),
+        ...(s.kind === 'stamp' && { kind: 'stamp' as const }),
+        ...(s.original && { originalSize: s.original }),
         ...(blob && { blob }),
       },
     })
@@ -255,4 +263,12 @@ export async function syncOnce(accountKey: string) {
   // Bounded, in case edits keep arriving while we send.
   for (let i = 0; i < 1000 && (await pushBatch()); i++);
   for (let i = 0; i < 1000 && (await pullPage()); i++);
+}
+
+/**
+ * The original picture of a sticker made on another device. They can be big, so they're fetched
+ * when looked at rather than with the sticker. Null when the server doesn't have it.
+ */
+export async function fetchOriginal(id: string): Promise<Blob | null> {
+  return downloadImage('sticker-original', id)
 }

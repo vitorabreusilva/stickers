@@ -50,8 +50,21 @@ function cleanSticker(raw: unknown): SyncSticker {
     topic: optional(s.topic, 40),
     effect: optional(s.effect, 40),
     ...(s.ai !== undefined && { ai }),
+    ...(s.kind !== undefined && { kind: optional(s.kind, 40) }),
+    ...(s.original !== undefined && { original: cleanSize(s.original) }),
   }
 }
+
+function cleanSize(raw: unknown): { width: number; height: number } | null {
+  const size = raw as { width?: unknown; height?: unknown } | null
+  if (!size || typeof size !== 'object') return null
+  const width = int(size.width)
+  const height = int(size.height)
+  return width > 0 && height > 0 ? { width, height } : null
+}
+
+/** Sticker fields that devices from before them don't send. Those devices leave them as they were. */
+const LATER_STICKER_FIELDS = ['ai', 'kind', 'original'] as const
 
 function cleanFolder(raw: unknown): SyncFolder {
   const f = raw as SyncFolder
@@ -114,13 +127,27 @@ async function push(db: Db, userId: string, body: SyncPush) {
     // reading "everything after N" can't skip a row that commits late.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`)
 
-    // Devices that don't know about AI folders leave what the AI said about a sticker alone.
-    for (const knowsAi of [false, true]) {
-      const batch = newStickers.filter((s) => (s.ai !== undefined) === knowsAi)
-      if (!batch.length) continue
+    // Devices that don't know about a field (what the AI said about a sticker, say) leave it alone,
+    // so stickers are written in batches by which of those fields they came with.
+    const byFields = new Map<string, SyncSticker[]>()
+    for (const s of newStickers) {
+      const key = LATER_STICKER_FIELDS.filter((f) => s[f] !== undefined).join()
+      byFields.set(key, [...(byFields.get(key) ?? []), s])
+    }
+    for (const batch of byFields.values()) {
+      const knows = (field: (typeof LATER_STICKER_FIELDS)[number]) => batch[0][field] !== undefined
       await tx
         .insert(stickers)
-        .values(batch.map((s) => ({ ...s, ai: s.ai ?? null, userId, deleted: !!s.deleted })))
+        .values(
+          batch.map((s) => ({
+            ...s,
+            ai: s.ai ?? null,
+            kind: s.kind ?? null,
+            original: s.original ?? null,
+            userId,
+            deleted: !!s.deleted,
+          })),
+        )
         .onConflictDoUpdate({
           target: [stickers.userId, stickers.id],
           set: {
@@ -132,7 +159,9 @@ async function push(db: Db, userId: string, body: SyncPush) {
             analysis: sql`excluded.analysis`,
             topic: sql`excluded.topic`,
             effect: sql`excluded.effect`,
-            ...(knowsAi && { ai: sql`excluded.ai` }),
+            ...(knows('ai') && { ai: sql`excluded.ai` }),
+            ...(knows('kind') && { kind: sql`excluded.kind` }),
+            ...(knows('original') && { original: sql`excluded.original` }),
           },
         })
     }
@@ -198,7 +227,9 @@ async function push(db: Db, userId: string, body: SyncPush) {
   // Deleted records keep a tombstone row, but their pictures can go. Best effort: a leftover file
   // costs a little storage, not correctness.
   const gone = [
-    ...newStickers.filter((s) => s.deleted).map((s) => imagePath(userId, 'sticker', s.id)),
+    ...newStickers
+      .filter((s) => s.deleted)
+      .flatMap((s) => [imagePath(userId, 'sticker', s.id), imagePath(userId, 'sticker-original', s.id)]),
     ...newPages
       .filter((p) => p.deleted)
       .flatMap((p) => [imagePath(userId, 'book-page', p.id), imagePath(userId, 'book-sticker', p.id)]),
@@ -274,6 +305,8 @@ async function pull(db: Db, userId: string, since: number): Promise<SyncPull> {
               topic: row.topic,
               effect: row.effect,
               ai: (row.ai as SyncSticker['ai']) ?? null,
+              kind: row.kind,
+              original: (row.original as SyncSticker['original']) ?? null,
             },
       )
     } else if (item.kind === 'folder') {

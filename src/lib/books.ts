@@ -71,3 +71,21 @@ export function bookFileName(title: string, suffix = ''): string {
   const name = (title.trim() || DEFAULT_TITLE).replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '').toLowerCase()
   return `${name || 'coloring-book'}${suffix}.pdf`
 }
+
+/** A coloring page made from a sticker, and where it is. */
+export interface PageOfSticker<B, P> {
+  book: B
+  page: P
+  /** Its page number in the book. */
+  folio: number
+}
+
+/** Every coloring page made from sticker `stickerId`, book by book in the order given. */
+export function pagesOfSticker<B extends { pages: { stickerId: string }[] }>(
+  books: B[],
+  stickerId: string,
+): PageOfSticker<B, B['pages'][number]>[] {
+  return books.flatMap((book) =>
+    book.pages.flatMap((page, index) => (page.stickerId === stickerId ? [{ book, page, folio: index + 1 }] : [])),
+  )
+}

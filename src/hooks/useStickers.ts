@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { collectionEvents, deleteSticker, listStickers, saveSticker, updateSticker, type StickerRecord } from '../lib/db'
+import {
+  collectionEvents,
+  deleteSticker,
+  listStickers,
+  saveSticker,
+  storeOriginal,
+  updateSticker,
+  type StickerRecord,
+} from '../lib/db'
 
 export interface Sticker extends StickerRecord {
   url: string
@@ -80,5 +88,11 @@ export function useStickers() {
     setStickers((current) => current?.map((s) => (s.id === id ? { ...s, ...patch } : s)) ?? null)
   }, [])
 
-  return { stickers, add, remove, update }
+  /** Keeps an original picture downloaded for a sticker made on another device. */
+  const attachOriginal = useCallback(async (id: string, original: Blob) => {
+    await storeOriginal(id, original)
+    setStickers((current) => current?.map((s) => (s.id === id ? { ...s, original } : s)) ?? null)
+  }, [])
+
+  return { stickers, add, remove, update, attachOriginal }
 }

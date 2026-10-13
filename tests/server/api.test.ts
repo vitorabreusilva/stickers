@@ -121,7 +121,18 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     const first = await pullJson(me.cookie)
     expect(first.more).toBe(false)
     expect(first.stickers).toEqual([
-      { id: 's1', width: 512, height: 600, createdAt: 1, topic: 'dogs', effect: null, analysis: { version: 1, embedding: 'AAAA' }, ai: null },
+      {
+        id: 's1',
+        width: 512,
+        height: 600,
+        createdAt: 1,
+        topic: 'dogs',
+        effect: null,
+        analysis: { version: 1, embedding: 'AAAA' },
+        ai: null,
+        kind: null,
+        original: null,
+      },
       {
         id: 's2',
         width: 10,
@@ -131,6 +142,8 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
         effect: 'holo',
         analysis: null,
         ai: { subject: 'Bluey', folder: { name: 'Bluey', emoji: '🐶' } },
+        kind: null,
+        original: null,
       },
     ])
     expect(first.folders).toEqual([{ key: 'dogs', color: 'mint' }])
@@ -174,6 +187,23 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     expect((await pullJson(me.cookie, second.rev)).stickers).toEqual([])
   })
 
+  it('keeps stamps and the size of their original picture, even when older devices edit them', async () => {
+    const stamp = { id: 'st1', width: 600, height: 400, createdAt: 9, kind: 'stamp', original: { width: 4032, height: 3024 } }
+    await pushJson(me.cookie, { stickers: [stamp, { id: 'st2', width: 5, height: 5, createdAt: 9, original: { width: -1 } }] })
+    const start = (await pullJson(me.cookie)).stickers
+    expect(start.find((s: { id: string }) => s.id === 'st1')).toMatchObject({ kind: 'stamp', original: { width: 4032, height: 3024 } })
+    // Nonsense sizes are dropped rather than stored.
+    expect(start.find((s: { id: string }) => s.id === 'st2')).toMatchObject({ kind: null, original: null })
+    const rev = (await pullJson(me.cookie)).rev
+
+    // A device from before stamps changes its topic: it stays a stamp, with its original's size.
+    await pushJson(me.cookie, { stickers: [{ id: 'st1', width: 600, height: 400, createdAt: 9, topic: 'food', ai: null }] })
+    const edited = await pullJson(me.cookie, rev)
+    expect(edited.stickers).toEqual([
+      expect.objectContaining({ id: 'st1', topic: 'food', kind: 'stamp', original: { width: 4032, height: 3024 } }),
+    ])
+  })
+
   it('pages through big pulls without losing anything', async () => {
     const other = await signIn(`friend+${run}@example.com`)
     const many = Array.from({ length: 450 }, (_, i) => ({ id: `m${i}`, width: 1, height: 1, createdAt: i }))
@@ -192,7 +222,7 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
     expect(pages).toBe(3)
     expect(seen).toEqual(many.map((s) => s.id))
     // And none of it is visible to anyone else.
-    expect((await pullJson(me.cookie)).stickers.map((s: { id: string }) => s.id)).toEqual(['s1', 's2'])
+    expect((await pullJson(me.cookie)).stickers.map((s: { id: string }) => s.id).sort()).toEqual(['s1', 's2', 'st1', 'st2'])
   })
 
   it('stores pictures per person, and deletes them with their sticker', async () => {
@@ -201,6 +231,8 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
       call(cookie, `/images/${kind}/${id}`, { method: 'PUT', body: png, headers: { 'content-type': type } })
 
     expect((await put('sticker', 's1')).status).toBe(200)
+    expect((await put('sticker-original', 's1', 'image/jpeg')).status).toBe(200)
+    expect((await call(me.cookie, '/images/sticker-original/s1')).headers.get('content-type')).toBe('image/jpeg')
     const back = await call(me.cookie, '/images/sticker/s1')
     expect(back.headers.get('content-type')).toBe('image/png')
     expect(new Uint8Array(await back.arrayBuffer())).toEqual(png)
@@ -214,6 +246,7 @@ describe.skipIf(!process.env.DATABASE_URL)('api', () => {
 
     await pushJson(me.cookie, { stickers: [{ id: 's1', deleted: true }] })
     expect((await call(me.cookie, '/images/sticker/s1')).status).toBe(404)
+    expect((await call(me.cookie, '/images/sticker-original/s1')).status).toBe(404)
   })
 
   it('rejects malformed pushes', async () => {

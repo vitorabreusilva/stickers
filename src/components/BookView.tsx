@@ -45,6 +45,11 @@ interface Props {
   onUpdatePage: (id: string, patch: Partial<Pick<BookPageRecord, 'bookId' | 'hideGuide'>>) => Promise<void>
   /** Opens the page-through preview at side `index`. */
   onPreview: (index: number) => void
+  /** A page to open straight away, e.g. when coming from the sticker it was made from. */
+  initialPage?: string
+  /** The sticker in the collection a page was made from, if it's still there. */
+  stickerOf: (id: string) => { url: string; kind?: 'stamp' } | undefined
+  onOpenSticker: (id: string) => void
   onClose: () => void
   toast: (message: string) => void
 }
@@ -77,6 +82,9 @@ export function BookView({
   onReorderPages,
   onUpdatePage,
   onPreview,
+  initialPage,
+  stickerOf,
+  onOpenSticker,
   onClose,
   toast,
 }: Props) {
@@ -89,7 +97,7 @@ export function BookView({
   const previews = useBookPreviews(contents, sides)
   const blanks = sides.filter((s) => s.kind === 'blank').length
   const hasPages = book.pages.length > 0
-  const [editing, setEditing] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(initialPage ?? null)
   const editingPage = book.pages.find((p) => p.id === editing)
 
   const reorder = (ids: string[]) => onReorderPages(ids).catch(() => toast("Couldn't move the page"))
@@ -351,6 +359,8 @@ export function BookView({
           books={books}
           onUpdate={(patch) => onUpdatePage(editingPage.id, patch)}
           onCreateBook={onCreateBook}
+          source={stickerOf(editingPage.stickerId)}
+          onOpenSticker={() => onOpenSticker(editingPage.stickerId)}
           onClose={() => setEditing(null)}
           toast={toast}
         />
@@ -404,7 +414,7 @@ function pageFolio(sides: BookSide[], index: number): number {
   return 0
 }
 
-/** Editing one page: whether it shows the colour guide, and which book it's in. */
+/** One page: the sticker it was made from, whether it shows the colour guide, and which book it's in. */
 function PageSheet({
   page,
   folio,
@@ -413,6 +423,8 @@ function PageSheet({
   books,
   onUpdate,
   onCreateBook,
+  source,
+  onOpenSticker,
   onClose,
   toast,
 }: {
@@ -423,10 +435,23 @@ function PageSheet({
   books: Book[]
   onUpdate: (patch: Partial<Pick<BookPageRecord, 'bookId' | 'hideGuide'>>) => Promise<void>
   onCreateBook: () => Promise<BookRecord>
+  /** The sticker it was made from, while it's still in the collection. */
+  source: { url: string; kind?: 'stamp' } | undefined
+  onOpenSticker: () => void
   onClose: () => void
   toast: (message: string) => void
 }) {
   const [busy, setBusy] = useState(false)
+  // The page keeps its own copy of the sticker, for when it's gone from the collection.
+  const [copyUrl, setCopyUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (source) return
+    const url = URL.createObjectURL(page.sticker)
+    setCopyUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [source, page.sticker])
+  const sourceUrl = source?.url ?? copyUrl
+  const what = source?.kind === 'stamp' ? 'stamp' : 'sticker'
   const others = books.filter((b) => b.id !== book.id)
   const guide = !page.hideGuide
 
@@ -456,6 +481,18 @@ function PageSheet({
         </header>
         <div className="page-sheet-preview paper paper-small">
           {preview ? <img src={preview} alt={`Page ${folio}`} /> : <div className="spinner" />}
+        </div>
+        <div className="page-source">
+          <span className="page-source-art">{sourceUrl && <img src={sourceUrl} alt={`The ${what} this page was made from`} />}</span>
+          <span className="page-source-text">
+            <strong>Made from {source ? `this ${what}` : 'a sticker'}</strong>
+            <small>{source ? 'Open it in your collection' : "It's no longer in your collection"}</small>
+          </span>
+          {source && (
+            <button className="btn btn-secondary page-source-open" onClick={onOpenSticker} disabled={busy}>
+              Open {what}
+            </button>
+          )}
         </div>
         <button
           className="switch-row page-sheet-guide"

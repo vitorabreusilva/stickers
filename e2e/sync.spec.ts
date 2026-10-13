@@ -324,3 +324,52 @@ test('AI folders sort a signed-in collection and follow it to other devices', as
   await expect(laptop.getByRole('dialog', { name: 'Settings' }).getByText(E2E_EMAIL)).toBeVisible()
   await expect(laptop.getByRole('switch', { name: 'AI folders' })).toHaveCount(0)
 })
+
+test("a stamp follows you to another device, and its original picture comes when it's looked at", async ({ browser }) => {
+  test.setTimeout(120_000)
+  const cookies = await account()
+  const phone = await device(browser, cookies)
+  const laptop = await device(browser, cookies)
+  await phone.addInitScript(() => localStorage.setItem('stickers.removeBackground', 'off'))
+
+  await phone.goto('/')
+  await phone.getByRole('button', { name: 'Settings' }).click()
+  const phoneSheet = phone.getByRole('dialog', { name: 'Settings' })
+  await expect(phoneSheet.getByText(E2E_EMAIL)).toBeVisible()
+  await phoneSheet.getByRole('button', { name: 'Close' }).click()
+
+  const picture = await phone.evaluate(async () => {
+    const canvas = new OffscreenCanvas(640, 480)
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#7cc6ff'
+    ctx.fillRect(0, 0, 640, 480)
+    return Array.from(new Uint8Array(await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer()))
+  })
+  await phone.getByTestId('file-input').setInputFiles({ name: 'sky.png', mimeType: 'image/png', buffer: Buffer.from(picture) })
+  await phone.getByRole('button', { name: 'Use whole picture' }).click()
+  const preview = phone.getByRole('dialog', { name: 'Sticker preview' })
+  await preview.getByRole('radio', { name: 'Stamp' }).click()
+  const sent = pushed(phone)
+  await preview.getByRole('button', { name: 'Add to collection' }).click()
+  await sent
+
+  // The laptop gets the stamp, but not its original picture until it's opened.
+  const originals: string[] = []
+  laptop.on('request', (r) => r.url().includes('/api/images/sticker-original/') && originals.push(r.url()))
+  await laptop.goto('/')
+  await laptop.getByRole('button', { name: 'Open sticker' }).click({ timeout: 15_000 })
+  const detail = laptop.getByRole('dialog', { name: 'Stamp', exact: true })
+  await expect(detail.getByText('640 × 480 px')).toBeVisible()
+  expect(originals).toEqual([])
+
+  await detail.getByRole('button', { name: 'See the original picture' }).click()
+  const size = await laptop
+    .getByRole('dialog', { name: 'Original picture' })
+    .getByRole('img')
+    .evaluate(async (img: HTMLImageElement) => {
+      await img.decode()
+      return [img.naturalWidth, img.naturalHeight]
+    })
+  expect(size).toEqual([640, 480])
+  expect(originals).toHaveLength(1)
+})
