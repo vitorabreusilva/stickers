@@ -3,7 +3,7 @@
 // "Taylor Swift"), rather than the fixed topics the on-device models pick from. Pure: shared by
 // the app, the server and the tests.
 
-import { assignTopics, TOPIC_IDS, TOPICS, type GroupKey, type Topicable, type TopicId } from './topics'
+import { assignTopics, TOPIC_IDS, TOPICS, type GroupKey, type Topicable, type TopicId } from './topics.js'
 
 /** Bump when the description prompt changes enough that stickers should be described again. */
 export const AI_LABEL_VERSION = 1
