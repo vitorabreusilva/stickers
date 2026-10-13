@@ -55,7 +55,11 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
   const [cutout, setCutout] = useState<Cutout>(() =>
     cutting ? { kind: 'working', status: { stage: 'cutting' } } : { kind: 'off' },
   )
-  const [sticker, setSticker] = useState<(StickerImage & { url: string }) | null>(null)
+  // Tagged with what it was made with: making a new one takes a moment, and until then the old one
+  // must not be saved as if it were the new one.
+  const [sticker, setSticker] = useState<
+    (StickerImage & { url: string; kind: StickerKind; outline: OutlineSize; cutout: Cutout }) | null
+  >(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -112,7 +116,7 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
       .then((result) => {
         if (cancelled) return
         url = URL.createObjectURL(result.blob)
-        setSticker({ ...result, url })
+        setSticker({ ...result, url, kind, outline, cutout })
       })
       .catch((err: Error) => !cancelled && setError(err.message))
     return () => {
@@ -144,11 +148,15 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
     setCutoutPreferred(!removeBg)
   }
 
+  // A sticker shows until the next one is ready, unless it's the other style: a stamp isn't a sticker.
+  const shown = sticker?.kind === kind ? sticker : null
+  const current = shown && shown.outline === outline && shown.cutout === cutout ? shown : null
+
   const save = async () => {
-    if (!sticker || saving) return
+    if (!current || saving) return
     setSaving(true)
     try {
-      await onSave(sticker, effect, kind)
+      await onSave(current, effect, kind)
     } catch (err) {
       console.error(err)
       setError('Could not save the sticker. Is your storage full?')
@@ -172,8 +180,8 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
             <p className="preview-error">{error}</p>
           ) : cutout.kind === 'working' ? (
             <CutoutProgress status={cutout.status} />
-          ) : sticker ? (
-            <StickerArt key={sticker.url} className="preview-sticker" image={sticker} effect={effect} alt="Sticker preview" idle />
+          ) : shown ? (
+            <StickerArt key={shown.url} className="preview-sticker" image={shown} effect={effect} alt="Sticker preview" idle />
           ) : (
             <div className="spinner" aria-label="Cutting…" />
           )}
@@ -227,14 +235,14 @@ export function StickerPreview({ image, loop, onBack, onSave }: Props) {
             </>
           )}
 
-          <EffectPicker image={cutout.kind === 'working' || error ? null : sticker} value={effect} onChange={chooseEffect} />
+          <EffectPicker image={cutout.kind === 'working' || error ? null : shown} value={effect} onChange={chooseEffect} />
         </div>
 
         <div className="sheet-actions">
           <button className="btn btn-secondary" onClick={onBack}>
             Redraw
           </button>
-          <button className="btn btn-primary" onClick={save} disabled={!sticker || saving || cutout.kind === 'working'}>
+          <button className="btn btn-primary" onClick={save} disabled={!current || saving || cutout.kind === 'working'}>
             {saving ? 'Saving…' : 'Add to collection'}
           </button>
         </div>
